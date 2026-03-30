@@ -31,11 +31,11 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   PatientGender? _gender;
   bool _initialized = false;
   bool _isSaving = false;
+  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     if (_initialized) return;
 
     final authUser = ref.read(authControllerProvider).user;
@@ -124,13 +124,23 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
     return null;
   }
 
+  String? _genderValidator(PatientGender? value) {
+    if (value == null) return 'Sexe requis';
+    return null;
+  }
+
+  String? _birthDateValidator(DateTime? value) {
+    if (value == null) return 'Date de naissance requise';
+    return null;
+  }
+
   Future<void> _pickBirthDate() async {
     final now = DateTime.now();
     final initial = _birthDate ?? DateTime(now.year - 20, now.month, now.day);
 
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: initial.isAfter(now) ? now : initial,
       firstDate: DateTime(1900),
       lastDate: now,
     );
@@ -143,44 +153,43 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   }
 
   Future<void> _save() async {
-    final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid || _isSaving) return;
-
-    final authUser = ref.read(authControllerProvider).user;
-    if (authUser == null) return;
-
-    if (_birthDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Date de naissance requise.')),
-      );
-      return;
-    }
-
-    if (_gender == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sexe requis.')),
-      );
-      return;
-    }
+    if (_isSaving) return;
 
     FocusScope.of(context).unfocus();
+
+    final isValid = _formKey.currentState?.validate() ?? false;
+    if (!isValid) {
+      setState(() {
+        _autovalidateMode = AutovalidateMode.onUserInteraction;
+      });
+      return;
+    }
+
+    final authUser = ref.read(authControllerProvider).user;
+    if (authUser == null) {
+      _showMessage('Vous devez être connecté pour modifier votre profil.');
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
+      final normalizedName = StringNormalizers.collapseSpaces(_nameCtrl.text);
+      final normalizedPhone = StringNormalizers.normalizePhoneCi(_phoneCtrl.text);
+      final normalizedBloodGroup =
+          StringNormalizers.collapseSpaces(_bloodGroupCtrl.text).toUpperCase();
+
       await ref.read(authControllerProvider.notifier).updateProfile(
-            name: _nameCtrl.text,
-            phone: _phoneCtrl.text,
+            name: normalizedName,
+            phone: normalizedPhone,
           );
 
       final updatedAuthUser = ref.read(authControllerProvider).user ?? authUser;
 
-      final normalizedBloodGroup =
-          StringNormalizers.collapseSpaces(_bloodGroupCtrl.text).toUpperCase();
-
       final profile = PatientProfile(
         id: updatedAuthUser.id,
-        name: StringNormalizers.collapseSpaces(_nameCtrl.text),
-        phone: StringNormalizers.normalizePhoneCi(_phoneCtrl.text),
+        name: normalizedName,
+        phone: normalizedPhone,
         city: _nullIfBlank(_cityCtrl.text),
         district: _nullIfBlank(_districtCtrl.text),
         address: _nullIfBlank(_addressCtrl.text),
@@ -196,23 +205,23 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       await ref.read(patientProfileControllerProvider).save(profile);
 
       if (!mounted) return;
-      setState(() => _isSaving = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profil mis à jour.')),
-      );
-
+      _showMessage('Profil mis à jour.');
       Navigator.of(context).pop();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isSaving = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible d’enregistrer les modifications.'),
-        ),
-      );
+      _showMessage('Impossible d’enregistrer les modifications.');
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
+  }
+
+  void _showMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String? _nullIfBlank(String value) {
@@ -229,8 +238,9 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
-    final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     if (authState.user == null) {
       return Scaffold(
@@ -258,6 +268,7 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
       body: SafeArea(
         child: Form(
           key: _formKey,
+          autovalidateMode: _autovalidateMode,
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -282,201 +293,207 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Informations principales',
-                        style: textTheme.titleMedium,
+              _SectionCard(
+                title: 'Informations principales',
+                children: [
+                  TextFormField(
+                    controller: _nameCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Nom complet',
+                      hintText: 'Ex : Konan Awa',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    validator: _nameValidator,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Téléphone',
+                      hintText: '+2250700000001',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                    ),
+                    validator: _phoneValidator,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _cityCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Ville',
+                      hintText: 'Ex : Abidjan',
+                      prefixIcon: Icon(Icons.location_city_outlined),
+                    ),
+                    validator: (value) => _requiredTextValidator(value, 'Ville'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _districtCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Commune / quartier',
+                      hintText: 'Ex : Cocody',
+                      prefixIcon: Icon(Icons.place_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _addressCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Adresse',
+                      hintText: 'Rue, résidence, repère...',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.home_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<PatientGender>(
+                    initialValue: _gender,
+                    decoration: const InputDecoration(
+                      labelText: 'Sexe',
+                      prefixIcon: Icon(Icons.wc_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: PatientGender.female,
+                        child: Text('Féminin'),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _nameCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Nom complet',
-                          hintText: 'Ex : Konan Awa',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
-                        validator: _nameValidator,
+                      DropdownMenuItem(
+                        value: PatientGender.male,
+                        child: Text('Masculin'),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Téléphone',
-                          hintText: '+2250700000001',
-                          prefixIcon: Icon(Icons.phone_outlined),
-                        ),
-                        validator: _phoneValidator,
+                      DropdownMenuItem(
+                        value: PatientGender.other,
+                        child: Text('Autre'),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _cityCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Ville',
-                          hintText: 'Ex : Abidjan',
-                          prefixIcon: Icon(Icons.location_city_outlined),
-                        ),
-                        validator: (value) =>
-                            _requiredTextValidator(value, 'Ville'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _districtCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Commune / quartier',
-                          hintText: 'Ex : Cocody',
-                          prefixIcon: Icon(Icons.place_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _addressCtrl,
-                        textInputAction: TextInputAction.next,
-                        minLines: 2,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Adresse',
-                          hintText: 'Rue, résidence, repère...',
-                          alignLabelWithHint: true,
-                          prefixIcon: Icon(Icons.home_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<PatientGender>(
-                        initialValue: _gender,
-                        decoration: const InputDecoration(
-                          labelText: 'Sexe',
-                          prefixIcon: Icon(Icons.wc_outlined),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: PatientGender.female,
-                            child: Text('Féminin'),
+                    ],
+                    validator: _genderValidator,
+                    onChanged: (value) {
+                      setState(() => _gender = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  FormField<DateTime>(
+                    initialValue: _birthDate,
+                    validator: (_) => _birthDateValidator(_birthDate),
+                    builder: (field) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              await _pickBirthDate();
+                              field.didChange(_birthDate);
+                            },
+                            icon: const Icon(Icons.calendar_today_outlined),
+                            label: Text(
+                              _birthDate == null
+                                  ? 'Ajouter la date de naissance'
+                                  : 'Date de naissance : ${_formatDate(_birthDate!)}',
+                            ),
                           ),
-                          DropdownMenuItem(
-                            value: PatientGender.male,
-                            child: Text('Masculin'),
-                          ),
-                          DropdownMenuItem(
-                            value: PatientGender.other,
-                            child: Text('Autre'),
-                          ),
+                          if (field.hasError) ...[
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                field.errorText!,
+                                style: TextStyle(
+                                  color: theme.colorScheme.error,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                        onChanged: (value) {
-                          setState(() => _gender = value);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _pickBirthDate,
-                        icon: const Icon(Icons.calendar_today_outlined),
-                        label: Text(
-                          _birthDate == null
-                              ? 'Ajouter la date de naissance'
-                              : 'Date de naissance : ${_formatDate(_birthDate!)}',
-                        ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Informations médicales utiles',
-                        style: textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _bloodGroupCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Groupe sanguin',
-                          hintText: 'Ex : O+, A-, AB+',
-                          prefixIcon: Icon(Icons.bloodtype_outlined),
-                        ),
-                        validator: _bloodGroupValidator,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _allergiesCtrl,
-                        textInputAction: TextInputAction.next,
-                        minLines: 2,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Allergies',
-                          hintText: 'Ex : pénicilline, arachide...',
-                          alignLabelWithHint: true,
-                          prefixIcon: Icon(Icons.warning_amber_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _medicalNotesCtrl,
-                        textInputAction: TextInputAction.next,
-                        minLines: 2,
-                        maxLines: 4,
-                        decoration: const InputDecoration(
-                          labelText: 'Notes médicales',
-                          hintText: 'Antécédents, informations utiles...',
-                          alignLabelWithHint: true,
-                          prefixIcon: Icon(Icons.medical_information_outlined),
-                        ),
-                      ),
-                    ],
+              _SectionCard(
+                title: 'Informations médicales utiles',
+                children: [
+                  TextFormField(
+                    controller: _bloodGroupCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Groupe sanguin',
+                      hintText: 'Ex : O+, A-, AB+',
+                      prefixIcon: Icon(Icons.bloodtype_outlined),
+                    ),
+                    validator: _bloodGroupValidator,
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _allergiesCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Allergies',
+                      hintText: 'Ex : pénicilline, arachide...',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.warning_amber_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _medicalNotesCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes médicales',
+                      hintText: 'Antécédents, informations utiles...',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.medical_information_outlined),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Contact d’urgence',
-                        style: textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _emergencyNameCtrl,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'Nom du contact',
-                          hintText: 'Ex : Konan Koffi',
-                          prefixIcon: Icon(Icons.contact_phone_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _emergencyPhoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
-                          labelText: 'Téléphone du contact',
-                          hintText: '+2250700000002',
-                          prefixIcon: Icon(Icons.phone_callback_outlined),
-                        ),
-                        validator: _optionalPhoneValidator,
-                      ),
-                    ],
+              _SectionCard(
+                title: 'Contact d’urgence',
+                children: [
+                  TextFormField(
+                    controller: _emergencyNameCtrl,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Nom du contact',
+                      hintText: 'Ex : Konan Koffi',
+                      prefixIcon: Icon(Icons.contact_phone_outlined),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _emergencyPhoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Téléphone du contact',
+                      hintText: '+2250700000002',
+                      prefixIcon: Icon(Icons.phone_callback_outlined),
+                    ),
+                    validator: _optionalPhoneValidator,
+                    onFieldSubmitted: (_) => _save(),
+                  ),
+                ],
               ),
               const SizedBox(height: 18),
               SizedBox(
@@ -498,6 +515,38 @@ class _ProfileEditPageState extends ConsumerState<ProfileEditPage> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.children,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
         ),
       ),
     );
