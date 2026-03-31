@@ -61,17 +61,20 @@ class _ProfessionalAppointmentsPageState
   void initState() {
     super.initState();
     _searchCtrl = TextEditingController();
-    _searchCtrl.addListener(() {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    _searchCtrl.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
+    _searchCtrl
+      ..removeListener(_onSearchChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _confirmStatusChange(
@@ -104,8 +107,7 @@ class _ProfessionalAppointmentsPageState
         ) ??
         false;
 
-    if (!confirmed) return;
-    if (!context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     await ref.read(appointmentsControllerProvider).updateStatus(
           id: appointment.id,
@@ -114,9 +116,12 @@ class _ProfessionalAppointmentsPageState
 
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(successMessage)),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(successMessage)),
+      );
   }
 
   Future<void> _refresh(WidgetRef ref) async {
@@ -157,7 +162,8 @@ class _ProfessionalAppointmentsPageState
 
             final nextPending =
                 sections.pending.isNotEmpty ? sections.pending.first : null;
-            final nextToday = sections.today.isNotEmpty ? sections.today.first : null;
+            final nextToday =
+                sections.today.isNotEmpty ? sections.today.first : null;
 
             return RefreshIndicator(
               onRefresh: () => _refresh(ref),
@@ -248,46 +254,22 @@ class _ProfessionalAppointmentsPageState
   ) {
     final all = [...items]..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final today = all
-        .where(
-          (item) =>
-              item.status == AppointmentStatus.confirmed &&
-              AppDateFormatters.isToday(item.scheduledAt),
-        )
-        .toList()
+    final today = all.where(_isTodayConfirmedAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final pending = all
-        .where((item) => item.status == AppointmentStatus.pending)
-        .toList()
+    final pending = all.where(_isPendingAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final upcomingConfirmed = all
-        .where(
-          (item) =>
-              item.status == AppointmentStatus.confirmed && item.isUpcoming,
-        )
-        .toList()
+    final upcomingConfirmed = all.where(_isUpcomingConfirmedAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final pastConfirmed = all
-        .where(
-          (item) =>
-              item.status == AppointmentStatus.confirmed && !item.isUpcoming,
-        )
-        .toList()
+    final pastConfirmed = all.where(_isPastConfirmedAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
-    final patientCancelled = all
-        .where((item) => item.status == AppointmentStatus.cancelledByPatient)
-        .toList()
+    final patientCancelled = all.where(_isPatientCancelledAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
-    final declined = all
-        .where(
-          (item) => item.status == AppointmentStatus.declinedByProfessional,
-        )
-        .toList()
+    final declined = all.where(_isDeclinedAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     final closed = <Appointment>[
@@ -390,7 +372,8 @@ class _ProfessionalAppointmentsPageState
                         context,
                         ref,
                         appointment: item,
-                        newStatus: AppointmentStatus.declinedByProfessional,
+                        newStatus:
+                            AppointmentStatus.declinedByProfessional,
                         title: 'Refuser la demande',
                         message:
                             'Souhaitez-vous refuser cette demande pour ${item.patientFullName} ?',
@@ -943,6 +926,33 @@ bool _matchesQuery(Appointment appointment, String query) {
   );
 
   return haystack.contains(query);
+}
+
+bool _isPendingAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.pending;
+}
+
+bool _isTodayConfirmedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.confirmed &&
+      AppDateFormatters.isToday(appointment.scheduledAt);
+}
+
+bool _isUpcomingConfirmedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.confirmed &&
+      appointment.isUpcoming;
+}
+
+bool _isPastConfirmedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.confirmed &&
+      !appointment.isUpcoming;
+}
+
+bool _isDeclinedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.declinedByProfessional;
+}
+
+bool _isPatientCancelledAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.cancelledByPatient;
 }
 
 String _normalize(String value) {

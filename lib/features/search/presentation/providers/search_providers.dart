@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../data/mock_search_data.dart';
 import '../../data/mock_search_repository.dart';
@@ -61,6 +62,22 @@ class SearchFilters {
       sortMode: SortMode.recommended,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is SearchFilters &&
+        other.what == what &&
+        other.where == where &&
+        other.availableSoonOnly == availableSoonOnly &&
+        other.city == city &&
+        other.sortMode == sortMode;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(what, where, availableSoonOnly, city, sortMode);
 }
 
 @immutable
@@ -119,6 +136,7 @@ class SearchFiltersController extends StateNotifier<SearchFilters> {
 
   void setCity(String? value) {
     final normalized = _normalizeOptionalFilterValue(value);
+
     if (normalized == null) {
       if (state.city == null) return;
       state = state.copyWith(clearCity: true);
@@ -251,7 +269,7 @@ SearchSortMode _mapSortMode(SortMode mode) {
 
 List<SearchItem> _mergeDynamicProfessionalItem({
   required List<SearchItem> items,
-  required professionalProfile,
+  required ProfessionalProfile professionalProfile,
 }) {
   final baseProfessional = items.cast<SearchItem?>().firstWhere(
         (item) => item?.id == professionalProfile.id,

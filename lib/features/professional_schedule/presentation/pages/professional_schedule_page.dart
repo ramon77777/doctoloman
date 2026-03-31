@@ -27,11 +27,14 @@ class ProfessionalSchedulePage extends ConsumerWidget {
 
               if (!context.mounted) return;
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Horaires réinitialisés.'),
-                ),
-              );
+              final messenger = ScaffoldMessenger.of(context);
+              messenger
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  const SnackBar(
+                    content: Text('Horaires réinitialisés.'),
+                  ),
+                );
             },
             icon: const Icon(Icons.refresh),
           ),
@@ -105,6 +108,7 @@ class _DayScheduleCard extends ConsumerWidget {
                 children: [
                   TextFormField(
                     controller: startCtrl,
+                    keyboardType: TextInputType.datetime,
                     decoration: const InputDecoration(
                       labelText: 'Début',
                       hintText: '08:30',
@@ -114,6 +118,7 @@ class _DayScheduleCard extends ConsumerWidget {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: endCtrl,
+                    keyboardType: TextInputType.datetime,
                     decoration: const InputDecoration(
                       labelText: 'Fin',
                       hintText: '12:00',
@@ -125,11 +130,13 @@ class _DayScheduleCard extends ConsumerWidget {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(_TimeRangeAction.cancel),
+                onPressed: () =>
+                    Navigator.of(ctx).pop(_TimeRangeAction.cancel),
                 child: const Text('Fermer'),
               ),
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(_TimeRangeAction.clear),
+                onPressed: () =>
+                    Navigator.of(ctx).pop(_TimeRangeAction.clear),
                 child: const Text('Effacer'),
               ),
               FilledButton(
@@ -150,11 +157,13 @@ class _DayScheduleCard extends ConsumerWidget {
 
         if (!context.mounted) return;
 
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('$title effacé.'),
-          ),
-        );
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('$title effacé.'),
+            ),
+          );
         return;
       }
 
@@ -163,84 +172,35 @@ class _DayScheduleCard extends ConsumerWidget {
       final start = startCtrl.text.trim();
       final end = endCtrl.text.trim();
 
-      final startMinutes = _toMinutes(start);
-      final endMinutes = _toMinutes(end);
+      final validationError = _validateTimeRange(
+        start: start,
+        end: end,
+        otherStart: isMorning ? day.afternoonStart : day.morningStart,
+        otherEnd: isMorning ? day.afternoonEnd : day.morningEnd,
+        isMorning: isMorning,
+      );
 
-      if (startMinutes == null || endMinutes == null) {
+      if (validationError != null) {
         if (!context.mounted) return;
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Heure invalide.'),
-          ),
-        );
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(validationError)),
+          );
         return;
-      }
-
-      if (startMinutes >= endMinutes) {
-        if (!context.mounted) return;
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('L’heure de début doit être avant l’heure de fin.'),
-          ),
-        );
-        return;
-      }
-
-      final otherStart = isMorning ? day.afternoonStart : day.morningStart;
-      final otherEnd = isMorning ? day.afternoonEnd : day.morningEnd;
-      final otherStartMinutes = _toMinutes(otherStart ?? '');
-      final otherEndMinutes = _toMinutes(otherEnd ?? '');
-
-      if (otherStartMinutes != null && otherEndMinutes != null) {
-        final overlaps = startMinutes < otherEndMinutes &&
-            endMinutes > otherStartMinutes;
-
-        if (overlaps) {
-          if (!context.mounted) return;
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Cette plage chevauche l’autre plage horaire de la journée.',
-              ),
-            ),
-          );
-          return;
-        }
-
-        if (isMorning && endMinutes > otherStartMinutes) {
-          if (!context.mounted) return;
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'La plage du matin doit se terminer avant celle de l’après-midi.',
-              ),
-            ),
-          );
-          return;
-        }
-
-        if (!isMorning && startMinutes < otherEndMinutes) {
-          if (!context.mounted) return;
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'La plage de l’après-midi doit commencer après celle du matin.',
-              ),
-            ),
-          );
-          return;
-        }
       }
 
       await onSave(start, end);
 
       if (!context.mounted) return;
 
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('$title mis à jour.'),
-        ),
-      );
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('$title mis à jour.'),
+          ),
+        );
     } finally {
       startCtrl.dispose();
       endCtrl.dispose();
@@ -249,7 +209,7 @@ class _DayScheduleCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final controller = ref.read(professionalSchedulesMapProvider.notifier);
 
     return Card(
@@ -282,7 +242,7 @@ class _DayScheduleCard extends ConsumerWidget {
               child: Text(
                 day.summary,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
+                      color: colorScheme.onSurfaceVariant,
                     ),
               ),
             ),
@@ -362,7 +322,7 @@ class _RangeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
@@ -371,7 +331,7 @@ class _RangeTile extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
+          color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -433,4 +393,45 @@ int? _toMinutes(String hhmm) {
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
 
   return hh * 60 + mm;
+}
+
+String? _validateTimeRange({
+  required String start,
+  required String end,
+  required String? otherStart,
+  required String? otherEnd,
+  required bool isMorning,
+}) {
+  final startMinutes = _toMinutes(start);
+  final endMinutes = _toMinutes(end);
+
+  if (startMinutes == null || endMinutes == null) {
+    return 'Heure invalide.';
+  }
+
+  if (startMinutes >= endMinutes) {
+    return 'L’heure de début doit être avant l’heure de fin.';
+  }
+
+  final otherStartMinutes = _toMinutes(otherStart ?? '');
+  final otherEndMinutes = _toMinutes(otherEnd ?? '');
+
+  if (otherStartMinutes != null && otherEndMinutes != null) {
+    final overlaps =
+        startMinutes < otherEndMinutes && endMinutes > otherStartMinutes;
+
+    if (overlaps) {
+      return 'Cette plage chevauche l’autre plage horaire de la journée.';
+    }
+
+    if (isMorning && endMinutes > otherStartMinutes) {
+      return 'La plage du matin doit se terminer avant celle de l’après-midi.';
+    }
+
+    if (!isMorning && startMinutes < otherEndMinutes) {
+      return 'La plage de l’après-midi doit commencer après celle du matin.';
+    }
+  }
+
+  return null;
 }

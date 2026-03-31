@@ -34,23 +34,40 @@ class AppointmentFlowPage extends ConsumerStatefulWidget {
 }
 
 class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
-  int _step = 0;
-
-  String _reason = 'Consultation';
+  static const String _consentVersion = 'dl-ci-consent-v1';
 
   final _formKey = GlobalKey<FormState>();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController(text: '+225 ');
 
+  int _step = 0;
+  String _reason = 'Consultation';
   bool _consentAccepted = false;
   bool _confirming = false;
   bool _didInitialPrefill = false;
-
-  static const String _consentVersion = 'dl-ci-consent-v1';
+  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
 
   DateTime get _normalizedDay =>
       DateTime(widget.day.year, widget.day.month, widget.day.day);
+
+  int get _selectedReasonDurationMinutes => _reasonDurationMinutes(_reason);
+
+  bool get _isPhoneValid {
+    final normalized = StringNormalizers.normalizePhoneCi(_phoneCtrl.text);
+    return StringNormalizers.isValidCiPhone(normalized);
+  }
+
+  bool get _isPatientStepValid {
+    return _firstNameCtrl.text.trim().isNotEmpty &&
+        _lastNameCtrl.text.trim().isNotEmpty &&
+        _isPhoneValid;
+  }
+
+  bool get _canConfirm {
+    final authState = ref.read(authControllerProvider);
+    return authState.isAuthenticated && _isPatientStepValid && _consentAccepted;
+  }
 
   @override
   void initState() {
@@ -80,6 +97,13 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     _lastNameCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  void _showMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _prefillFromProfileAndAuth({
@@ -125,24 +149,6 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     return (firstName, lastName);
   }
 
-  int get _selectedReasonDurationMinutes => _reasonDurationMinutes(_reason);
-
-  void _next() {
-    if (_step == 1) {
-      final ok = _formKey.currentState?.validate() ?? false;
-      if (!ok) return;
-    }
-
-    if (_step < 2) {
-      setState(() => _step += 1);
-    }
-  }
-
-  void _back() {
-    if (_step == 0) return;
-    setState(() => _step -= 1);
-  }
-
   Future<void> _ensureAuth() async {
     final authStateBefore = ref.read(authControllerProvider);
     if (authStateBefore.isAuthenticated) return;
@@ -172,27 +178,28 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Connexion requise pour envoyer la demande.'),
-      ),
-    );
+    _showMessage('Connexion requise pour envoyer la demande.');
   }
 
-  bool get _isPhoneValid {
-    final normalized = StringNormalizers.normalizePhoneCi(_phoneCtrl.text);
-    return StringNormalizers.isValidCiPhone(normalized);
+  void _next() {
+    if (_step == 1) {
+      final ok = _formKey.currentState?.validate() ?? false;
+      if (!ok) {
+        setState(() {
+          _autovalidateMode = AutovalidateMode.onUserInteraction;
+        });
+        return;
+      }
+    }
+
+    if (_step < 2) {
+      setState(() => _step += 1);
+    }
   }
 
-  bool get _isPatientStepValid {
-    return _firstNameCtrl.text.trim().isNotEmpty &&
-        _lastNameCtrl.text.trim().isNotEmpty &&
-        _isPhoneValid;
-  }
-
-  bool get _canConfirm {
-    final authState = ref.read(authControllerProvider);
-    return authState.isAuthenticated && _isPatientStepValid && _consentAccepted;
+  void _back() {
+    if (_step == 0) return;
+    setState(() => _step -= 1);
   }
 
   Future<void> _confirm() async {
@@ -203,24 +210,20 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     if (!authState.isAuthenticated) return;
 
     if (!_consentAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tu dois accepter le consentement pour continuer.'),
-        ),
-      );
+      _showMessage('Tu dois accepter le consentement pour continuer.');
       return;
     }
 
     final formValid = _formKey.currentState?.validate() ?? _isPatientStepValid;
     if (!formValid || !_isPatientStepValid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Informations patient incomplètes ou invalides.'),
-        ),
-      );
+      setState(() {
+        _autovalidateMode = AutovalidateMode.onUserInteraction;
+      });
+      _showMissingFeedback();
       return;
     }
 
+    FocusScope.of(context).unfocus();
     setState(() => _confirming = true);
 
     try {
@@ -266,23 +269,14 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       setState(() => _confirming = false);
 
       if (e is AppointmentSlotUnavailableException) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Ce créneau vient d’être réservé. Merci d’en choisir un autre.',
-            ),
-          ),
+        _showMessage(
+          'Ce créneau vient d’être réservé. Merci d’en choisir un autre.',
         );
-
         Navigator.of(context).pop();
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Erreur lors de l’envoi de la demande.'),
-        ),
-      );
+      _showMessage('Erreur lors de l’envoi de la demande.');
     }
   }
 
@@ -307,12 +301,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     }
 
     if (missing.isEmpty) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('À compléter : ${missing.join(', ')}'),
-      ),
-    );
+    _showMessage('À compléter : ${missing.join(', ')}');
   }
 
   @override
@@ -335,10 +324,11 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       _ReasonStep(
         item: widget.item,
         selected: _reason,
-        onSelect: (v) => setState(() => _reason = v),
+        onSelect: (value) => setState(() => _reason = value),
       ),
       _PatientStep(
         formKey: _formKey,
+        autovalidateMode: _autovalidateMode,
         firstNameCtrl: _firstNameCtrl,
         lastNameCtrl: _lastNameCtrl,
         phoneCtrl: _phoneCtrl,
@@ -354,7 +344,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         phone: StringNormalizers.normalizePhoneCi(_phoneCtrl.text),
         authed: authState.isAuthenticated,
         consentAccepted: _consentAccepted,
-        onConsentChanged: (v) => setState(() => _consentAccepted = v),
+        onConsentChanged: (value) => setState(() => _consentAccepted = value),
         onLoginPressed: _ensureAuth,
       ),
     ];
@@ -512,25 +502,51 @@ class _ReasonStep extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),
-                RadioGroup<String>(
-                  groupValue: selected,
-                  onChanged: (value) {
-                    if (value == null) return;
-                    onSelect(value);
-                  },
-                  child: Column(
-                    children: [
-                      for (final r in reasons)
-                        RadioListTile<String>(
-                          value: r,
-                          title: Text(
-                            '$r • ${_formatDurationLabel(_reasonDurationMinutes(r))}',
-                          ),
-                          contentPadding: EdgeInsets.zero,
+                for (final reason in reasons)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => onSelect(reason),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
                         ),
-                    ],
+                        decoration: BoxDecoration(
+                          color: selected == reason
+                              ? Theme.of(context).colorScheme.primaryContainer
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected == reason
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.outlineVariant,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              selected == reason
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              size: 20,
+                              color: selected == reason
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '$reason • ${_formatDurationLabel(_reasonDurationMinutes(reason))}',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -543,12 +559,14 @@ class _ReasonStep extends StatelessWidget {
 class _PatientStep extends StatelessWidget {
   const _PatientStep({
     required this.formKey,
+    required this.autovalidateMode,
     required this.firstNameCtrl,
     required this.lastNameCtrl,
     required this.phoneCtrl,
   });
 
   final GlobalKey<FormState> formKey;
+  final AutovalidateMode autovalidateMode;
   final TextEditingController firstNameCtrl;
   final TextEditingController lastNameCtrl;
   final TextEditingController phoneCtrl;
@@ -562,17 +580,19 @@ class _PatientStep extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             child: Form(
               key: formKey,
+              autovalidateMode: autovalidateMode,
               child: Column(
                 children: [
                   TextFormField(
                     controller: firstNameCtrl,
                     textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
                       labelText: 'Prénom',
                       prefixIcon: Icon(Icons.person_outline),
                     ),
-                    validator: (v) {
-                      final s = (v ?? '').trim();
+                    validator: (value) {
+                      final s = (value ?? '').trim();
                       if (s.isEmpty) return 'Prénom requis';
                       return null;
                     },
@@ -581,12 +601,13 @@ class _PatientStep extends StatelessWidget {
                   TextFormField(
                     controller: lastNameCtrl,
                     textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
                       labelText: 'Nom',
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
-                    validator: (v) {
-                      final s = (v ?? '').trim();
+                    validator: (value) {
+                      final s = (value ?? '').trim();
                       if (s.isEmpty) return 'Nom requis';
                       return null;
                     },
@@ -601,8 +622,8 @@ class _PatientStep extends StatelessWidget {
                       prefixIcon: Icon(Icons.phone_outlined),
                       hintText: '+2250102030405',
                     ),
-                    validator: (v) {
-                      if (!StringNormalizers.isValidCiPhone(v ?? '')) {
+                    validator: (value) {
+                      if (!StringNormalizers.isValidCiPhone(value ?? '')) {
                         return 'Numéro invalide. Exemple : +2250102030405';
                       }
                       return null;
@@ -709,7 +730,7 @@ class _SummaryStep extends StatelessWidget {
                 const SizedBox(height: 10),
                 CheckboxListTile(
                   value: consentAccepted,
-                  onChanged: (v) => onConsentChanged(v ?? false),
+                  onChanged: (value) => onConsentChanged(value ?? false),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                   title: const Text(
@@ -765,7 +786,7 @@ class _Line extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -776,13 +797,13 @@ class _Line extends StatelessWidget {
             width: 92,
             child: Text(
               label,
-              style: t.labelLarge?.copyWith(
+              style: textTheme.labelLarge?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
           Expanded(
-            child: Text(value, style: t.bodyMedium),
+            child: Text(value, style: textTheme.bodyMedium),
           ),
         ],
       ),
@@ -928,7 +949,7 @@ class _ConfirmLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
+    final textTheme = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
@@ -940,7 +961,7 @@ class _ConfirmLine extends StatelessWidget {
             width: 96,
             child: Text(
               label,
-              style: t.labelLarge?.copyWith(
+              style: textTheme.labelLarge?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
@@ -948,7 +969,7 @@ class _ConfirmLine extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: t.bodyMedium,
+              style: textTheme.bodyMedium,
             ),
           ),
         ],

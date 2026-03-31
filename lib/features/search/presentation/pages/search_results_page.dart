@@ -38,15 +38,15 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> {
     _whatCtrl = TextEditingController(text: widget.initialWhat);
     _whereCtrl = TextEditingController(text: widget.initialWhere);
 
-    final where = widget.initialWhere.trim();
-    final maybeCity = MockSearchData.cities().firstWhere(
-      (city) => city.toLowerCase() == where.toLowerCase(),
+    final initialWhere = widget.initialWhere.trim();
+    final initialCity = MockSearchData.cities().firstWhere(
+      (city) => city.toLowerCase() == initialWhere.toLowerCase(),
       orElse: () => '',
     );
 
-    if (maybeCity.isNotEmpty) {
+    if (initialCity.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(searchFiltersProvider(_seed).notifier).setCity(maybeCity);
+        ref.read(searchFiltersProvider(_seed).notifier).setCity(initialCity);
       });
     }
   }
@@ -130,14 +130,7 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> {
 
   String _filtersButtonLabel(SearchFilters filters) {
     final cityPart = filters.city == null ? 'Toutes villes' : filters.city!;
-    final sortPart = switch (filters.sortMode) {
-      SortMode.recommended => 'Recommandé',
-      SortMode.ratingDesc => 'Meilleure note',
-      SortMode.priceAsc => 'Prix croissant',
-      SortMode.priceDesc => 'Prix décroissant',
-      SortMode.distanceAsc => 'Distance',
-    };
-
+    final sortPart = _sortLabel(filters.sortMode);
     return 'Filtrer • $cityPart • $sortPart';
   }
 }
@@ -268,16 +261,6 @@ class _ActiveFiltersSummary extends StatelessWidget {
       runSpacing: 8,
       children: chips,
     );
-  }
-
-  String _sortLabel(SortMode mode) {
-    return switch (mode) {
-      SortMode.recommended => 'Recommandé',
-      SortMode.ratingDesc => 'Meilleure note',
-      SortMode.priceAsc => 'Prix croissant',
-      SortMode.priceDesc => 'Prix décroissant',
-      SortMode.distanceAsc => 'Distance',
-    };
   }
 }
 
@@ -687,16 +670,6 @@ class _FiltersSheetState extends ConsumerState<_FiltersSheet> {
     _sortMode = filters.sortMode;
   }
 
-  String _label(SortMode mode) {
-    return switch (mode) {
-      SortMode.recommended => 'Recommandé',
-      SortMode.ratingDesc => 'Meilleure note',
-      SortMode.priceAsc => 'Prix croissant',
-      SortMode.priceDesc => 'Prix décroissant',
-      SortMode.distanceAsc => 'Distance',
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final cities = ref.watch(availableSearchCitiesProvider);
@@ -792,22 +765,52 @@ class _FiltersSheetState extends ConsumerState<_FiltersSheet> {
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: RadioGroup<SortMode>(
-                      groupValue: _sortMode,
-                      onChanged: (SortMode? value) {
-                        if (value == null) return;
-                        setState(() => _sortMode = value);
-                      },
-                      child: Column(
-                        children: [
-                          for (final mode in SortMode.values)
-                            RadioListTile<SortMode>(
-                              value: mode,
-                              title: Text(_label(mode)),
-                              contentPadding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        for (final mode in SortMode.values)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => setState(() => _sortMode = mode),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _sortMode == mode
+                                      ? Theme.of(context).colorScheme.primaryContainer
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _sortMode == mode
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _sortMode == mode
+                                          ? Icons.radio_button_checked
+                                          : Icons.radio_button_off,
+                                      size: 20,
+                                      color: _sortMode == mode
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(_sortLabel(mode)),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -851,5 +854,20 @@ class _FiltersSheetState extends ConsumerState<_FiltersSheet> {
         ),
       ),
     );
+  }
+}
+
+String _sortLabel(SortMode mode) {
+  switch (mode) {
+    case SortMode.recommended:
+      return 'Recommandé';
+    case SortMode.ratingDesc:
+      return 'Meilleure note';
+    case SortMode.priceAsc:
+      return 'Prix croissant';
+    case SortMode.priceDesc:
+      return 'Prix décroissant';
+    case SortMode.distanceAsc:
+      return 'Distance';
   }
 }

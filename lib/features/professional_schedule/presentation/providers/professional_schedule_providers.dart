@@ -7,11 +7,11 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/professional_schedule.dart';
 
 const _professionalSchedulesStorageKey = 'professional_schedules_v1';
+const _defaultPractitionerId = 'pro_001';
 
 final practitionerScheduleProvider =
     Provider.family<List<DaySchedule>, String>((ref, practitionerId) {
   final schedulesByPractitioner = ref.watch(professionalSchedulesMapProvider);
-
   return schedulesByPractitioner[practitionerId] ??
       ProfessionalScheduleController.defaultSchedule;
 }, name: 'practitionerScheduleProvider');
@@ -31,132 +31,140 @@ class ProfessionalScheduleController
 
   final SharedPreferences _prefs;
 
-  static final List<DaySchedule> defaultSchedule = [
-    const DaySchedule(
-      weekday: 1,
-      label: 'Lundi',
-      isOpen: true,
-      morningStart: '08:30',
-      morningEnd: '12:00',
-      afternoonStart: '14:00',
-      afternoonEnd: '17:30',
-    ),
-    const DaySchedule(
-      weekday: 2,
-      label: 'Mardi',
-      isOpen: true,
-      morningStart: '08:30',
-      morningEnd: '12:00',
-      afternoonStart: '14:00',
-      afternoonEnd: '17:30',
-    ),
-    const DaySchedule(
-      weekday: 3,
-      label: 'Mercredi',
-      isOpen: true,
-      morningStart: '08:30',
-      morningEnd: '12:00',
-      afternoonStart: '14:00',
-      afternoonEnd: '17:30',
-    ),
-    const DaySchedule(
-      weekday: 4,
-      label: 'Jeudi',
-      isOpen: true,
-      morningStart: '08:30',
-      morningEnd: '12:00',
-      afternoonStart: '14:00',
-      afternoonEnd: '17:30',
-    ),
-    const DaySchedule(
-      weekday: 5,
-      label: 'Vendredi',
-      isOpen: true,
-      morningStart: '08:30',
-      morningEnd: '12:00',
-      afternoonStart: '14:00',
-      afternoonEnd: '17:00',
-    ),
-    const DaySchedule(
-      weekday: 6,
-      label: 'Samedi',
-      isOpen: true,
-      morningStart: '09:00',
-      morningEnd: '12:00',
-      afternoonStart: null,
-      afternoonEnd: null,
-    ),
-    const DaySchedule(
-      weekday: 7,
-      label: 'Dimanche',
-      isOpen: false,
-      morningStart: null,
-      morningEnd: null,
-      afternoonStart: null,
-      afternoonEnd: null,
-    ),
-  ];
+  static final List<DaySchedule> defaultSchedule = List<DaySchedule>.unmodifiable(
+    [
+      const DaySchedule(
+        weekday: 1,
+        label: 'Lundi',
+        isOpen: true,
+        morningStart: '08:30',
+        morningEnd: '12:00',
+        afternoonStart: '14:00',
+        afternoonEnd: '17:30',
+      ),
+      const DaySchedule(
+        weekday: 2,
+        label: 'Mardi',
+        isOpen: true,
+        morningStart: '08:30',
+        morningEnd: '12:00',
+        afternoonStart: '14:00',
+        afternoonEnd: '17:30',
+      ),
+      const DaySchedule(
+        weekday: 3,
+        label: 'Mercredi',
+        isOpen: true,
+        morningStart: '08:30',
+        morningEnd: '12:00',
+        afternoonStart: '14:00',
+        afternoonEnd: '17:30',
+      ),
+      const DaySchedule(
+        weekday: 4,
+        label: 'Jeudi',
+        isOpen: true,
+        morningStart: '08:30',
+        morningEnd: '12:00',
+        afternoonStart: '14:00',
+        afternoonEnd: '17:30',
+      ),
+      const DaySchedule(
+        weekday: 5,
+        label: 'Vendredi',
+        isOpen: true,
+        morningStart: '08:30',
+        morningEnd: '12:00',
+        afternoonStart: '14:00',
+        afternoonEnd: '17:00',
+      ),
+      const DaySchedule(
+        weekday: 6,
+        label: 'Samedi',
+        isOpen: true,
+        morningStart: '09:00',
+        morningEnd: '12:00',
+        afternoonStart: null,
+        afternoonEnd: null,
+      ),
+      const DaySchedule(
+        weekday: 7,
+        label: 'Dimanche',
+        isOpen: false,
+        morningStart: null,
+        morningEnd: null,
+        afternoonStart: null,
+        afternoonEnd: null,
+      ),
+    ],
+  );
 
   static Map<String, List<DaySchedule>> _loadInitialState(
     SharedPreferences prefs,
   ) {
     final raw = prefs.getString(_professionalSchedulesStorageKey);
     if (raw == null || raw.trim().isEmpty) {
-      return {
-        'pro_001': _cloneSchedule(defaultSchedule),
-      };
+      return _defaultState();
     }
 
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        return {
-          'pro_001': _cloneSchedule(defaultSchedule),
-        };
+        return _defaultState();
       }
 
       final result = <String, List<DaySchedule>>{};
 
       decoded.forEach((key, value) {
-        if (key.trim().isEmpty) return;
+        final normalizedPractitionerId = _normalizePractitionerId(key);
+        if (normalizedPractitionerId.isEmpty) return;
         if (value is! List) return;
 
-        final days = value
-            .whereType<Map>()
-            .map(
-              (e) => DaySchedule.fromMap(
-                Map<String, dynamic>.from(e),
-              ),
-            )
-            .toList();
+        final days = <DaySchedule>[];
+
+        for (final entry in value) {
+          if (entry is! Map) continue;
+
+          try {
+            final day = DaySchedule.fromMap(Map<String, dynamic>.from(entry));
+            days.add(day);
+          } catch (_) {
+            // On ignore uniquement l’entrée invalide pour préserver le reste.
+          }
+        }
 
         if (days.isNotEmpty) {
-          result[key] = _sortAndNormalize(days);
+          result[normalizedPractitionerId] = _sortAndNormalize(days);
         }
       });
 
-      if (!result.containsKey('pro_001')) {
-        result['pro_001'] = _cloneSchedule(defaultSchedule);
+      if (!result.containsKey(_defaultPractitionerId)) {
+        result[_defaultPractitionerId] = _cloneSchedule(defaultSchedule);
       }
 
-      return result;
+      return Map<String, List<DaySchedule>>.unmodifiable(result);
     } catch (_) {
-      return {
-        'pro_001': _cloneSchedule(defaultSchedule),
-      };
+      return _defaultState();
     }
   }
 
   List<DaySchedule> scheduleFor(String practitionerId) {
-    final existing = state[practitionerId];
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    if (normalizedPractitionerId.isEmpty) {
+      return _cloneSchedule(defaultSchedule);
+    }
+
+    final existing = state[normalizedPractitionerId];
     if (existing != null) {
       return _cloneSchedule(existing);
     }
+
     return _cloneSchedule(defaultSchedule);
   }
 
   Future<void> toggleDay(String practitionerId, int weekday, bool open) async {
-    final current = scheduleFor(practitionerId);
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
@@ -170,7 +178,7 @@ class ProfessionalScheduleController
           day,
     ];
 
-    await _replacePractitionerSchedule(practitionerId, next);
+    await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
   Future<void> updateMorning({
@@ -179,7 +187,8 @@ class ProfessionalScheduleController
     required String start,
     required String end,
   }) async {
-    final current = scheduleFor(practitionerId);
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
@@ -193,7 +202,7 @@ class ProfessionalScheduleController
           day,
     ];
 
-    await _replacePractitionerSchedule(practitionerId, next);
+    await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
   Future<void> updateAfternoon({
@@ -202,7 +211,8 @@ class ProfessionalScheduleController
     required String start,
     required String end,
   }) async {
-    final current = scheduleFor(practitionerId);
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
@@ -216,11 +226,12 @@ class ProfessionalScheduleController
           day,
     ];
 
-    await _replacePractitionerSchedule(practitionerId, next);
+    await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
   Future<void> clearMorning(String practitionerId, int weekday) async {
-    final current = scheduleFor(practitionerId);
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
@@ -230,11 +241,12 @@ class ProfessionalScheduleController
           day,
     ];
 
-    await _replacePractitionerSchedule(practitionerId, next);
+    await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
   Future<void> clearAfternoon(String practitionerId, int weekday) async {
-    final current = scheduleFor(practitionerId);
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
@@ -244,12 +256,13 @@ class ProfessionalScheduleController
           day,
     ];
 
-    await _replacePractitionerSchedule(practitionerId, next);
+    await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
   Future<void> resetDefaults(String practitionerId) async {
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
     await _replacePractitionerSchedule(
-      practitionerId,
+      normalizedPractitionerId,
       _cloneSchedule(defaultSchedule),
     );
   }
@@ -258,10 +271,15 @@ class ProfessionalScheduleController
     String practitionerId,
     List<DaySchedule> next,
   ) async {
-    state = {
-      ...state,
-      practitionerId: _sortAndNormalize(next),
-    };
+    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    if (normalizedPractitionerId.isEmpty) return;
+
+    final normalizedSchedule = _sortAndNormalize(next);
+
+    final nextState = Map<String, List<DaySchedule>>.from(state)
+      ..[normalizedPractitionerId] = normalizedSchedule;
+
+    state = Map<String, List<DaySchedule>>.unmodifiable(nextState);
     await _persist();
   }
 
@@ -277,12 +295,33 @@ class ProfessionalScheduleController
     );
   }
 
+  static Map<String, List<DaySchedule>> _defaultState() {
+    return Map<String, List<DaySchedule>>.unmodifiable({
+      _defaultPractitionerId: _cloneSchedule(defaultSchedule),
+    });
+  }
+
+  static String _normalizePractitionerId(String value) {
+    return value.trim();
+  }
+
   static List<DaySchedule> _cloneSchedule(List<DaySchedule> input) {
-    return input.map((day) => day.copyWith()).toList();
+    return List<DaySchedule>.unmodifiable(
+      input.map((day) => day.copyWith()).toList(),
+    );
   }
 
   static List<DaySchedule> _sortAndNormalize(List<DaySchedule> input) {
     final sorted = [...input]..sort((a, b) => a.weekday.compareTo(b.weekday));
-    return sorted;
+
+    final deduplicatedByWeekday = <int, DaySchedule>{};
+    for (final day in sorted) {
+      deduplicatedByWeekday[day.weekday] = day;
+    }
+
+    return List<DaySchedule>.unmodifiable(
+      deduplicatedByWeekday.values.toList()
+        ..sort((a, b) => a.weekday.compareTo(b.weekday)),
+    );
   }
 }
