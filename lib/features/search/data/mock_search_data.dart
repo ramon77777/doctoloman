@@ -8,7 +8,7 @@ class MockSearchData {
     'San-Pédro',
   ];
 
-  static const List<SearchItem> _items = [
+  static final List<SearchItem> _items = [
     // ========= DOCTEURS =========
     SearchItem(
       id: 'doc_001',

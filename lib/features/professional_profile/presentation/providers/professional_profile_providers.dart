@@ -7,9 +7,10 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/professional_profile.dart';
 
 const _professionalProfileStorageKey = 'professional_profile_v1';
+const _defaultProfessionalProfileId = 'pro_001';
 
-const _defaultProfessionalProfile = ProfessionalProfile(
-  id: 'pro_001',
+final defaultProfessionalProfile = ProfessionalProfile(
+  id: _defaultProfessionalProfileId,
   displayName: 'Dr Kouamé Aya',
   specialty: 'Médecin généraliste',
   structureName: 'Cabinet Médical Sainte Grâce',
@@ -19,90 +20,91 @@ const _defaultProfessionalProfile = ProfessionalProfile(
   address: 'Rue des Jardins',
   bio:
       'Médecin généraliste avec une pratique orientée suivi familial, prévention et consultations de proximité.',
-  languages: ['Français'],
+  languages: const ['Français'],
   consultationFeeLabel: '10 000 - 15 000 FCFA',
   isVerified: true,
 );
 
 class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
-  ProfessionalProfileController(this._prefs) : super(_loadInitialState(_prefs));
+  ProfessionalProfileController(this._prefs)
+      : super(_loadInitialState(_prefs));
 
   final SharedPreferences _prefs;
 
   static ProfessionalProfile _loadInitialState(SharedPreferences prefs) {
     final raw = prefs.getString(_professionalProfileStorageKey);
     if (raw == null || raw.trim().isEmpty) {
-      return _defaultProfessionalProfile;
+      return defaultProfessionalProfile;
     }
 
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        return _defaultProfessionalProfile;
+        return defaultProfessionalProfile;
       }
 
-      return _sanitizeProfile(
-        ProfessionalProfile(
-          id: _readString(decoded, 'id', _defaultProfessionalProfile.id),
-          displayName: _readString(
-            decoded,
-            'displayName',
-            _defaultProfessionalProfile.displayName,
-          ),
-          specialty: _readString(
-            decoded,
-            'specialty',
-            _defaultProfessionalProfile.specialty,
-          ),
-          structureName: _readString(
-            decoded,
-            'structureName',
-            _defaultProfessionalProfile.structureName,
-          ),
-          phone: _readString(
-            decoded,
-            'phone',
-            _defaultProfessionalProfile.phone,
-          ),
-          city: _readString(
-            decoded,
-            'city',
-            _defaultProfessionalProfile.city,
-          ),
-          area: _readString(
-            decoded,
-            'area',
-            _defaultProfessionalProfile.area,
-          ),
-          address: _readString(
-            decoded,
-            'address',
-            _defaultProfessionalProfile.address,
-          ),
-          bio: _readString(
-            decoded,
-            'bio',
-            _defaultProfessionalProfile.bio,
-          ),
-          languages: _readStringList(
-            decoded,
-            'languages',
-            _defaultProfessionalProfile.languages,
-          ),
-          consultationFeeLabel: _readString(
-            decoded,
-            'consultationFeeLabel',
-            _defaultProfessionalProfile.consultationFeeLabel,
-          ),
-          isVerified: _readBool(
-            decoded,
-            'isVerified',
-            _defaultProfessionalProfile.isVerified,
-          ),
+      final profile = ProfessionalProfile(
+        id: _readString(decoded, 'id', defaultProfessionalProfile.id),
+        displayName: _readString(
+          decoded,
+          'displayName',
+          defaultProfessionalProfile.displayName,
+        ),
+        specialty: _readString(
+          decoded,
+          'specialty',
+          defaultProfessionalProfile.specialty,
+        ),
+        structureName: _readString(
+          decoded,
+          'structureName',
+          defaultProfessionalProfile.structureName,
+        ),
+        phone: _readString(
+          decoded,
+          'phone',
+          defaultProfessionalProfile.phone,
+        ),
+        city: _readString(
+          decoded,
+          'city',
+          defaultProfessionalProfile.city,
+        ),
+        area: _readString(
+          decoded,
+          'area',
+          defaultProfessionalProfile.area,
+        ),
+        address: _readString(
+          decoded,
+          'address',
+          defaultProfessionalProfile.address,
+        ),
+        bio: _readString(
+          decoded,
+          'bio',
+          defaultProfessionalProfile.bio,
+        ),
+        languages: _readStringList(
+          decoded,
+          'languages',
+          defaultProfessionalProfile.languages,
+        ),
+        consultationFeeLabel: _readString(
+          decoded,
+          'consultationFeeLabel',
+          defaultProfessionalProfile.consultationFeeLabel,
+        ),
+        isVerified: _readBool(
+          decoded,
+          'isVerified',
+          defaultProfessionalProfile.isVerified,
         ),
       );
+
+      return _sanitizeProfile(profile);
     } catch (_) {
-      return _defaultProfessionalProfile;
+      return defaultProfessionalProfile;
     }
   }
 
@@ -135,38 +137,51 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       ),
     );
 
+    if (nextState == state) return;
+
     state = nextState;
     await _persist(nextState);
   }
 
   Future<void> resetProfile() async {
-    final resetState = _sanitizeProfile(_defaultProfessionalProfile);
+    final resetState = _sanitizeProfile(defaultProfessionalProfile);
+    if (resetState == state) return;
+
     state = resetState;
     await _persist(resetState);
   }
 
+  Future<void> replaceProfile(ProfessionalProfile profile) async {
+    final nextState = _sanitizeProfile(profile);
+    if (nextState == state) return;
+
+    state = nextState;
+    await _persist(nextState);
+  }
+
   Future<void> _persist(ProfessionalProfile profile) async {
     final sanitized = _sanitizeProfile(profile);
-
-    final payload = <String, dynamic>{
-      'id': sanitized.id,
-      'displayName': sanitized.displayName,
-      'specialty': sanitized.specialty,
-      'structureName': sanitized.structureName,
-      'phone': sanitized.phone,
-      'city': sanitized.city,
-      'area': sanitized.area,
-      'address': sanitized.address,
-      'bio': sanitized.bio,
-      'languages': sanitized.languages,
-      'consultationFeeLabel': sanitized.consultationFeeLabel,
-      'isVerified': sanitized.isVerified,
-    };
-
     await _prefs.setString(
       _professionalProfileStorageKey,
-      jsonEncode(payload),
+      jsonEncode(_toJson(sanitized)),
     );
+  }
+
+  static Map<String, dynamic> _toJson(ProfessionalProfile profile) {
+    return <String, dynamic>{
+      'id': profile.id,
+      'displayName': profile.displayName,
+      'specialty': profile.specialty,
+      'structureName': profile.structureName,
+      'phone': profile.phone,
+      'city': profile.city,
+      'area': profile.area,
+      'address': profile.address,
+      'bio': profile.bio,
+      'languages': profile.languages,
+      'consultationFeeLabel': profile.consultationFeeLabel,
+      'isVerified': profile.isVerified,
+    };
   }
 
   static ProfessionalProfile _sanitizeProfile(ProfessionalProfile profile) {
@@ -258,9 +273,8 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       if (value.isEmpty) continue;
 
       final key = value.toLowerCase();
-      if (seen.contains(key)) continue;
+      if (!seen.add(key)) continue;
 
-      seen.add(key);
       result.add(value);
     }
 
@@ -274,5 +288,4 @@ final professionalProfileProvider =
     final prefs = ref.watch(sharedPreferencesProvider);
     return ProfessionalProfileController(prefs);
   },
-  name: 'professionalProfileProvider',
 );

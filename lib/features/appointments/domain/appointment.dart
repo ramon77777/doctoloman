@@ -9,26 +9,41 @@ enum AppointmentStatus {
 
 @immutable
 class Appointment {
-  const Appointment({
-    required this.id,
-    required this.createdAt,
-    required this.practitionerId,
-    required this.practitionerName,
-    required this.specialty,
-    required this.address,
-    required this.city,
-    required this.area,
-    required this.day,
-    required this.slot,
-    required this.reason,
-    required this.patientFirstName,
-    required this.patientLastName,
-    required this.patientPhoneE164,
+  Appointment({
+    required String id,
+    required DateTime createdAt,
+    required String practitionerId,
+    required String practitionerName,
+    required String specialty,
+    required String address,
+    required String city,
+    required String area,
+    required DateTime day,
+    required String slot,
+    required String reason,
+    required String patientFirstName,
+    required String patientLastName,
+    required String patientPhoneE164,
     required this.consentAccepted,
-    required this.consentVersion,
-    required this.consentAcceptedAt,
+    required String consentVersion,
+    required DateTime consentAcceptedAt,
     this.status = AppointmentStatus.confirmed,
-  });
+  })  : id = _clean(id),
+        createdAt = createdAt,
+        practitionerId = _clean(practitionerId),
+        practitionerName = _clean(practitionerName),
+        specialty = _clean(specialty),
+        address = _clean(address),
+        city = _clean(city),
+        area = _clean(area),
+        day = _normalizeDay(day),
+        slot = _normalizeSlot(slot),
+        reason = _clean(reason),
+        patientFirstName = _clean(patientFirstName),
+        patientLastName = _clean(patientLastName),
+        patientPhoneE164 = _normalizePhone(patientPhoneE164),
+        consentVersion = _clean(consentVersion),
+        consentAcceptedAt = consentAcceptedAt;
 
   final String id;
   final DateTime createdAt;
@@ -56,28 +71,38 @@ class Appointment {
 
   final AppointmentStatus status;
 
-  String get patientFullName =>
-      '${patientFirstName.trim()} ${patientLastName.trim()}'.trim();
+  // =========================
+  // HELPERS MÉTIER
+  // =========================
 
-  String get practitionerLocationLabel => '$area, $city';
+  String get patientFullName =>
+      '$patientFirstName $patientLastName'.trim();
+
+  String get practitionerLocationLabel {
+    if (area.isEmpty && city.isEmpty) return 'Localisation non renseignée';
+    if (area.isEmpty) return city;
+    if (city.isEmpty) return area;
+    return '$area, $city';
+  }
 
   String get fullAddress {
-    final a = address.trim();
-    if (a.isEmpty) return practitionerLocationLabel;
-    return '$a • $practitionerLocationLabel';
+    if (address.isEmpty) return practitionerLocationLabel;
+    return '$address • $practitionerLocationLabel';
   }
 
   DateTime get scheduledAt {
     final parts = slot.split(':');
-    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    if (parts.length != 2) return day;
+
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
 
     return DateTime(
       day.year,
       day.month,
       day.day,
-      hour,
-      minute,
+      hour.clamp(0, 23),
+      minute.clamp(0, 59),
     );
   }
 
@@ -87,6 +112,14 @@ class Appointment {
   bool get isCancelledLike =>
       status == AppointmentStatus.cancelledByPatient ||
       status == AppointmentStatus.declinedByProfessional;
+
+  bool get isActive =>
+      status == AppointmentStatus.pending ||
+      status == AppointmentStatus.confirmed;
+
+  // =========================
+  // COPY
+  // =========================
 
   Appointment copyWith({
     String? id,
@@ -130,6 +163,10 @@ class Appointment {
     );
   }
 
+  // =========================
+  // SERIALIZATION
+  // =========================
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -155,31 +192,28 @@ class Appointment {
 
   factory Appointment.fromMap(Map<String, dynamic> map) {
     return Appointment(
-      id: (map['id'] as String?) ?? '',
-      createdAt: DateTime.parse(
-        (map['createdAt'] as String?) ?? DateTime.now().toIso8601String(),
-      ),
-      practitionerId: (map['practitionerId'] as String?) ?? '',
-      practitionerName: (map['practitionerName'] as String?) ?? '',
-      specialty: (map['specialty'] as String?) ?? '',
-      address: (map['address'] as String?) ?? '',
-      city: (map['city'] as String?) ?? '',
-      area: (map['area'] as String?) ?? '',
-      day: DateTime.parse(
-        (map['day'] as String?) ?? DateTime.now().toIso8601String(),
-      ),
-      slot: (map['slot'] as String?) ?? '',
-      reason: (map['reason'] as String?) ?? '',
-      patientFirstName: (map['patientFirstName'] as String?) ?? '',
-      patientLastName: (map['patientLastName'] as String?) ?? '',
-      patientPhoneE164: (map['patientPhoneE164'] as String?) ?? '',
-      consentAccepted: (map['consentAccepted'] as bool?) ?? false,
-      consentVersion: (map['consentVersion'] as String?) ?? '',
-      consentAcceptedAt: DateTime.parse(
-        (map['consentAcceptedAt'] as String?) ??
-            DateTime.now().toIso8601String(),
-      ),
-      status: _statusFromString((map['status'] as String?) ?? 'confirmed'),
+      id: map['id'] ?? '',
+      createdAt: DateTime.tryParse(map['createdAt'] ?? '') ??
+          DateTime.now(),
+      practitionerId: map['practitionerId'] ?? '',
+      practitionerName: map['practitionerName'] ?? '',
+      specialty: map['specialty'] ?? '',
+      address: map['address'] ?? '',
+      city: map['city'] ?? '',
+      area: map['area'] ?? '',
+      day: DateTime.tryParse(map['day'] ?? '') ??
+          DateTime.now(),
+      slot: map['slot'] ?? '',
+      reason: map['reason'] ?? '',
+      patientFirstName: map['patientFirstName'] ?? '',
+      patientLastName: map['patientLastName'] ?? '',
+      patientPhoneE164: map['patientPhoneE164'] ?? '',
+      consentAccepted: map['consentAccepted'] ?? false,
+      consentVersion: map['consentVersion'] ?? '',
+      consentAcceptedAt:
+          DateTime.tryParse(map['consentAcceptedAt'] ?? '') ??
+              DateTime.now(),
+      status: _statusFromString(map['status'] ?? 'confirmed'),
     );
   }
 
@@ -188,14 +222,61 @@ class Appointment {
       case 'pending':
         return AppointmentStatus.pending;
       case 'cancelledByPatient':
+      case 'cancelled':
         return AppointmentStatus.cancelledByPatient;
       case 'declinedByProfessional':
         return AppointmentStatus.declinedByProfessional;
-      case 'cancelled':
-        return AppointmentStatus.cancelledByPatient; // compat ancien stockage
-      case 'confirmed':
       default:
         return AppointmentStatus.confirmed;
     }
+  }
+
+  // =========================
+  // EQUALITY
+  // =========================
+
+  @override
+  bool operator ==(Object other) {
+    return other is Appointment &&
+        other.id == id &&
+        other.status == status &&
+        other.scheduledAt == scheduledAt;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, status, scheduledAt);
+
+  // =========================
+  // NORMALISATION
+  // =========================
+
+  static String _clean(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  static String _normalizePhone(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+
+    if (trimmed.startsWith('+')) {
+      final digits = trimmed.substring(1).replaceAll(RegExp(r'\D'), '');
+      return '+$digits';
+    }
+
+    return trimmed.replaceAll(RegExp(r'\D'), '');
+  }
+
+  static DateTime _normalizeDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  static String _normalizeSlot(String slot) {
+    final parts = slot.split(':');
+    if (parts.length != 2) return '00:00';
+
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+
+    return '${h.clamp(0, 23).toString().padLeft(2, '0')}:${m.clamp(0, 59).toString().padLeft(2, '0')}';
   }
 }

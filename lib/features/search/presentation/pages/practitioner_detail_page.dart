@@ -97,6 +97,23 @@ class _PractitionerDetailPageState
     });
   }
 
+  void _clearSelectedSlot() {
+    setState(() {
+      _selectedSlot = null;
+    });
+  }
+
+  void _showMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+        ),
+      );
+  }
+
   Future<bool> _requireAuth() async {
     final authState = ref.read(authControllerProvider);
     if (authState.isAuthenticated) {
@@ -118,28 +135,15 @@ class _PractitionerDetailPageState
   Future<void> _onBook(SearchItem item) async {
     final selectedSlot = _selectedSlot;
     if (selectedSlot == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Choisis un créneau avant de continuer.'),
-        ),
-      );
+      _showMessage('Choisis un créneau avant de continuer.');
       return;
     }
 
     final day = _normalizeDay(_selectedDay);
 
     if (!_isSlotStillBookable(day, selectedSlot)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Ce créneau n’est plus réservable. Choisis-en un autre.',
-          ),
-        ),
-      );
-
-      setState(() {
-        _selectedSlot = null;
-      });
+      _showMessage('Ce créneau n’est plus réservable. Choisis-en un autre.');
+      _clearSelectedSlot();
       return;
     }
 
@@ -168,8 +172,10 @@ class _PractitionerDetailPageState
       profile: professionalProfile,
     );
 
+    final practitionerId = resolved.item.id;
     final selectedDay = _normalizeDay(_selectedDay);
-    final schedules = ref.watch(practitionerScheduleProvider(resolved.item.id));
+
+    final schedules = ref.watch(practitionerScheduleProvider(practitionerId));
     final schedule = _scheduleForSelectedDay(schedules);
 
     final rawSlotResult = schedule == null
@@ -185,7 +191,7 @@ class _PractitionerDetailPageState
     final takenSlotsAsync = ref.watch(
       takenSlotsForPractitionerDayProvider(
         TakenSlotsQuery(
-          practitionerId: resolved.item.id,
+          practitionerId: practitionerId,
           day: selectedDay,
         ),
       ),
@@ -194,7 +200,8 @@ class _PractitionerDetailPageState
     final bottomInset = MediaQuery.of(context).padding.bottom;
     const actionHeight = 50.0;
     const actionPadding = 22.0;
-    final reservedBottomSpace = bottomInset + actionHeight + actionPadding + 18;
+    final reservedBottomSpace =
+        bottomInset + actionHeight + actionPadding + 18;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -220,7 +227,7 @@ class _PractitionerDetailPageState
                 children: [
                   _PractitionerHeader(item: resolved.item),
                   const SizedBox(height: 12),
-                  _SectionTitle(title: 'Informations'),
+                  const _SectionTitle(title: 'Informations'),
                   const SizedBox(height: 10),
                   _InfoCard(
                     children: [
@@ -258,7 +265,7 @@ class _PractitionerDetailPageState
                     ],
                   ),
                   const SizedBox(height: 18),
-                  _SectionTitle(title: 'Choisir un créneau'),
+                  const _SectionTitle(title: 'Choisir un créneau'),
                   const SizedBox(height: 10),
                   _DayPicker(
                     selected: selectedDay,
@@ -287,9 +294,9 @@ class _PractitionerDetailPageState
                       );
 
                       final isOpenSelectedDay = rawSlotResult.isOpen;
+                      final isLoggedIn = authState.isAuthenticated;
                       final canBook = _selectedSlot != null &&
                           availableSlots.contains(_selectedSlot);
-                      final isLoggedIn = authState.isAuthenticated;
 
                       if (!isOpenSelectedDay) {
                         return const _AvailabilityMessageCard(
@@ -301,8 +308,10 @@ class _PractitionerDetailPageState
                       }
 
                       if (availableSlots.isEmpty) {
-                        final isToday =
-                            _isSameDay(selectedDay, _normalizeDay(DateTime.now()));
+                        final isToday = _isSameDay(
+                          selectedDay,
+                          _normalizeDay(DateTime.now()),
+                        );
 
                         return _AvailabilityMessageCard(
                           icon: Icons.schedule_outlined,
@@ -313,45 +322,17 @@ class _PractitionerDetailPageState
                         );
                       }
 
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _SlotsGrid(
-                            slots: availableSlots,
-                            selectedSlot: _selectedSlot,
-                            onSelect: _pickSlot,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '${availableSlots.length} créneau(x) disponible(s)',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: AppColors.textMuted),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: FilledButton.icon(
-                              onPressed:
-                                  canBook ? () => _onBook(resolved.item) : null,
-                              icon: const Icon(Icons.event_available),
-                              label: Text(
-                                canBook
-                                    ? (isLoggedIn
-                                        ? 'Envoyer la demande'
-                                        : 'Se connecter pour continuer')
-                                    : 'Choisis un créneau',
-                              ),
-                            ),
-                          ),
-                        ],
+                      return _BookingSection(
+                        availableSlots: availableSlots,
+                        selectedSlot: _selectedSlot,
+                        isLoggedIn: isLoggedIn,
+                        onSelectSlot: _pickSlot,
+                        onBook: canBook ? () => _onBook(resolved.item) : null,
                       );
                     },
                   ),
                   const SizedBox(height: 24),
-                  _SectionTitle(title: 'À propos'),
+                  const _SectionTitle(title: 'À propos'),
                   const SizedBox(height: 10),
                   _AboutCard(data: resolved),
                   SizedBox(height: reservedBottomSpace),
@@ -361,6 +342,59 @@ class _PractitionerDetailPageState
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BookingSection extends StatelessWidget {
+  const _BookingSection({
+    required this.availableSlots,
+    required this.selectedSlot,
+    required this.isLoggedIn,
+    required this.onSelectSlot,
+    required this.onBook,
+  });
+
+  final List<String> availableSlots;
+  final String? selectedSlot;
+  final bool isLoggedIn;
+  final void Function(String slot) onSelectSlot;
+  final VoidCallback? onBook;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SlotsGrid(
+          slots: availableSlots,
+          selectedSlot: selectedSlot,
+          onSelect: onSelectSlot,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '${availableSlots.length} créneau(x) disponible(s)',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.textMuted,
+              ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: FilledButton.icon(
+            onPressed: onBook,
+            icon: const Icon(Icons.event_available),
+            label: Text(
+              selectedSlot != null
+                  ? (isLoggedIn
+                      ? 'Envoyer la demande'
+                      : 'Se connecter pour continuer')
+                  : 'Choisis un créneau',
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

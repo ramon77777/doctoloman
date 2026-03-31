@@ -2,6 +2,8 @@ import '../domain/search_item.dart';
 import '../domain/search_repository.dart';
 import 'mock_search_data.dart';
 
+const _unknownPriceSortValue = 1 << 30;
+
 class MockSearchRepository implements SearchRepository {
   const MockSearchRepository();
 
@@ -11,85 +13,43 @@ class MockSearchRepository implements SearchRepository {
   Future<SearchResultPage> search(SearchQuery query) async {
     await Future<void>.delayed(_artificialDelay);
 
-    final all = MockSearchData.items();
+    final normalizedWhat = _normalize(query.what);
+    final normalizedWhere = _normalize(query.where);
+    final normalizedCity = _normalize(query.city ?? '');
 
-    final filtered = all.where((item) {
-      if (!_matchesWhat(item, query.what)) return false;
-      if (!_matchesWhere(item, query.where)) return false;
+    final allItems = MockSearchData.items();
 
-      final selectedCity = query.city?.trim();
-      if (selectedCity != null && selectedCity.isNotEmpty) {
-        if (_normalize(item.city) != _normalize(selectedCity)) {
-          return false;
-        }
-      }
-
-      if (query.availableSoonOnly && !item.isAvailableSoon) {
-        return false;
-      }
-
+    final filtered = allItems.where((item) {
+      if (!_matchesWhat(item, normalizedWhat)) return false;
+      if (!_matchesWhere(item, normalizedWhere)) return false;
+      if (!_matchesSelectedCity(item, normalizedCity)) return false;
+      if (query.availableSoonOnly && !item.isAvailableSoon) return false;
       return true;
     }).toList();
 
-    final sorted = [...filtered]..sort((a, b) {
-      switch (query.sortMode) {
-        case SearchSortMode.recommended:
-          final verified = (b.isVerified ? 1 : 0) - (a.isVerified ? 1 : 0);
-          if (verified != 0) return verified;
-
-          final availableSoon =
-              (b.isAvailableSoon ? 1 : 0) - (a.isAvailableSoon ? 1 : 0);
-          if (availableSoon != 0) return availableSoon;
-
-          final rating = b.rating.compareTo(a.rating);
-          if (rating != 0) return rating;
-
-          return b.reviewCount.compareTo(a.reviewCount);
-
-        case SearchSortMode.ratingDesc:
-          final rating = b.rating.compareTo(a.rating);
-          if (rating != 0) return rating;
-          return b.reviewCount.compareTo(a.reviewCount);
-
-        case SearchSortMode.priceAsc:
-          final byPrice = _effectivePrice(a).compareTo(_effectivePrice(b));
-          if (byPrice != 0) return byPrice;
-          return b.rating.compareTo(a.rating);
-
-        case SearchSortMode.priceDesc:
-          final byPrice = _effectivePrice(b).compareTo(_effectivePrice(a));
-          if (byPrice != 0) return byPrice;
-          return b.rating.compareTo(a.rating);
-
-        case SearchSortMode.distanceAsc:
-          final da = _distanceKmApprox(
-            a,
-            query.userLatitude,
-            query.userLongitude,
-          );
-          final db = _distanceKmApprox(
-            b,
-            query.userLatitude,
-            query.userLongitude,
-          );
-          final byDistance = da.compareTo(db);
-          if (byDistance != 0) return byDistance;
-          return b.rating.compareTo(a.rating);
-      }
-    });
+    filtered.sort(
+      (a, b) => _compareSearchItems(
+        a: a,
+        b: b,
+        query: query,
+      ),
+    );
 
     final safePage = query.page < 1 ? 1 : query.page;
     final safePageSize = query.pageSize < 1 ? 20 : query.pageSize;
     final start = (safePage - 1) * safePageSize;
     final end = start + safePageSize;
 
-    final paged = start >= sorted.length
+    final paged = start >= filtered.length
         ? <SearchItem>[]
-        : sorted.sublist(start, end > sorted.length ? sorted.length : end);
+        : filtered.sublist(
+            start,
+            end > filtered.length ? filtered.length : end,
+          );
 
     return SearchResultPage(
       items: List<SearchItem>.unmodifiable(paged),
-      totalCount: sorted.length,
+      totalCount: filtered.length,
       page: safePage,
       pageSize: safePageSize,
     );
@@ -107,8 +67,107 @@ class MockSearchRepository implements SearchRepository {
         return item;
       }
     }
+
     return null;
   }
+}
+
+int _compareSearchItems({
+  required SearchItem a,
+  required SearchItem b,
+  required SearchQuery query,
+}) {
+  switch (query.sortMode) {
+    case SearchSortMode.recommended:
+      return _compareRecommended(a, b);
+
+    case SearchSortMode.ratingDesc:
+      return _compareByRatingDesc(a, b);
+
+    case SearchSortMode.priceAsc:
+      return _compareByPriceAsc(a, b);
+
+    case SearchSortMode.priceDesc:
+      return _compareByPriceDesc(a, b);
+
+    case SearchSortMode.distanceAsc:
+      return _compareByDistanceAsc(
+        a: a,
+        b: b,
+        userLatitude: query.userLatitude,
+        userLongitude: query.userLongitude,
+      );
+  }
+}
+
+int _compareRecommended(SearchItem a, SearchItem b) {
+  final verified = (b.isVerified ? 1 : 0) - (a.isVerified ? 1 : 0);
+  if (verified != 0) return verified;
+
+  final availableSoon =
+      (b.isAvailableSoon ? 1 : 0) - (a.isAvailableSoon ? 1 : 0);
+  if (availableSoon != 0) return availableSoon;
+
+  final rating = b.rating.compareTo(a.rating);
+  if (rating != 0) return rating;
+
+  final reviewCount = b.reviewCount.compareTo(a.reviewCount);
+  if (reviewCount != 0) return reviewCount;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByRatingDesc(SearchItem a, SearchItem b) {
+  final rating = b.rating.compareTo(a.rating);
+  if (rating != 0) return rating;
+
+  final reviewCount = b.reviewCount.compareTo(a.reviewCount);
+  if (reviewCount != 0) return reviewCount;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByPriceAsc(SearchItem a, SearchItem b) {
+  final byPrice = _effectivePrice(a).compareTo(_effectivePrice(b));
+  if (byPrice != 0) return byPrice;
+
+  final byRating = b.rating.compareTo(a.rating);
+  if (byRating != 0) return byRating;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByPriceDesc(SearchItem a, SearchItem b) {
+  final byPrice = _effectivePrice(b).compareTo(_effectivePrice(a));
+  if (byPrice != 0) return byPrice;
+
+  final byRating = b.rating.compareTo(a.rating);
+  if (byRating != 0) return byRating;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByDistanceAsc({
+  required SearchItem a,
+  required SearchItem b,
+  required double? userLatitude,
+  required double? userLongitude,
+}) {
+  final distanceA = _distanceKmApprox(a, userLatitude, userLongitude);
+  final distanceB = _distanceKmApprox(b, userLatitude, userLongitude);
+
+  final byDistance = distanceA.compareTo(distanceB);
+  if (byDistance != 0) return byDistance;
+
+  final byRating = b.rating.compareTo(a.rating);
+  if (byRating != 0) return byRating;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+bool _matchesSelectedCity(SearchItem item, String normalizedCity) {
+  if (normalizedCity.isEmpty) return true;
+  return _normalize(item.city) == normalizedCity;
 }
 
 String _normalize(String value) {
@@ -119,41 +178,36 @@ String _normalize(String value) {
       .replaceAll(RegExp(r'\s+'), ' ');
 }
 
-bool _containsNormalized(String source, String query) {
-  final normalizedQuery = _normalize(query);
+bool _containsNormalized(String source, String normalizedQuery) {
   if (normalizedQuery.isEmpty) return true;
   return _normalize(source).contains(normalizedQuery);
 }
 
-bool _matchesWhat(SearchItem item, String what) {
-  final normalized = _normalize(what);
-  if (normalized.isEmpty) return true;
+bool _matchesWhat(SearchItem item, String normalizedWhat) {
+  if (normalizedWhat.isEmpty) return true;
 
-  return _containsNormalized(item.displayName, normalized) ||
-      _containsNormalized(item.specialty, normalized);
+  return _containsNormalized(item.displayName, normalizedWhat) ||
+      _containsNormalized(item.specialty, normalizedWhat);
 }
 
-bool _matchesWhere(SearchItem item, String where) {
-  final normalized = _normalize(where);
-  if (normalized.isEmpty) return true;
+bool _matchesWhere(SearchItem item, String normalizedWhere) {
+  if (normalizedWhere.isEmpty) return true;
 
-  return _containsNormalized(item.city, normalized) ||
-      _containsNormalized(item.area, normalized) ||
-      _containsNormalized(item.address, normalized) ||
-      _containsNormalized(item.locationLabel, normalized);
+  return _containsNormalized(item.city, normalizedWhere) ||
+      _containsNormalized(item.area, normalizedWhere) ||
+      _containsNormalized(item.address, normalizedWhere) ||
+      _containsNormalized(item.locationLabel, normalizedWhere);
 }
 
 int _effectivePrice(SearchItem item) {
   if (item.priceXofMin <= 0 && item.priceXofMax <= 0) {
-    return 1 << 30;
+    return _unknownPriceSortValue;
   }
-  if (item.priceXofMin > 0) {
-    return item.priceXofMin;
-  }
-  if (item.priceXofMax > 0) {
-    return item.priceXofMax;
-  }
-  return 1 << 30;
+
+  if (item.priceXofMin > 0) return item.priceXofMin;
+  if (item.priceXofMax > 0) return item.priceXofMax;
+
+  return _unknownPriceSortValue;
 }
 
 double _distanceKmApprox(SearchItem item, double? lat, double? lng) {
@@ -162,5 +216,6 @@ double _distanceKmApprox(SearchItem item, double? lat, double? lng) {
 
   final dLat = (item.latitude! - lat).abs();
   final dLng = (item.longitude! - lng).abs();
+
   return (dLat + dLng) * 111;
 }

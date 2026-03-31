@@ -15,7 +15,7 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
   }
 
   Future<void> _persist(List<Appointment> items) async {
-    _cache = List<Appointment>.from(items);
+    _cache = List<Appointment>.unmodifiable(items);
     await _localStorage.saveAll(_cache!);
   }
 
@@ -23,10 +23,16 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     return DateTime(date.year, date.month, date.day);
   }
 
+  String _normalizeId(String value) {
+    return value.trim();
+  }
+
+  String _normalizeSlot(String value) {
+    return value.trim();
+  }
+
   bool _isSameDay(DateTime a, DateTime b) {
-    final da = _normalizeDay(a);
-    final db = _normalizeDay(b);
-    return da == db;
+    return _normalizeDay(a) == _normalizeDay(b);
   }
 
   bool _isSlotAlreadyTaken(
@@ -42,85 +48,90 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
       final samePractitioner = item.practitionerId == candidate.practitionerId;
       final sameDay = _isSameDay(item.day, candidate.day);
       final sameSlot = item.slot == candidate.slot;
-      final stillActive = !item.isCancelledLike;
+      final isStillBlocking = !item.isCancelledLike;
 
-      if (samePractitioner && sameDay && sameSlot && stillActive) {
+      if (samePractitioner && sameDay && sameSlot && isStillBlocking) {
         return true;
       }
     }
+
     return false;
   }
 
   @override
-    Future<void> create(Appointment appointment) async {
-      final items = await _loadItems();
+  Future<void> create(Appointment appointment) async {
+    final items = await _loadItems();
 
-      if (_isSlotAlreadyTaken(items, appointment)) {
-        throw AppointmentSlotUnavailableException(
-          practitionerId: appointment.practitionerId,
-          day: appointment.day,
-          slot: appointment.slot,
-        );
-      }
-
-      final updated = List<Appointment>.from(items)..add(appointment);
-      await _persist(updated);
-    }
-
-  @override
-    Future<AppointmentListResult> list(AppointmentListQuery query) async {
-      final items = await _loadItems();
-      var filtered = List<Appointment>.from(items);
-
-      final practitionerId = query.practitionerId?.trim();
-      if (practitionerId != null && practitionerId.isNotEmpty) {
-        filtered = filtered
-            .where((item) => item.practitionerId.trim() == practitionerId)
-            .toList();
-      }
-
-      if (query.status != null) {
-        filtered = filtered.where((item) => item.status == query.status).toList();
-      }
-
-      if (query.from != null) {
-        filtered = filtered
-            .where((item) => !item.scheduledAt.isBefore(query.from!))
-            .toList();
-      }
-
-      if (query.to != null) {
-        filtered = filtered
-            .where((item) => !item.scheduledAt.isAfter(query.to!))
-            .toList();
-      }
-
-      filtered.sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
-
-      final safePage = query.page < 1 ? 1 : query.page;
-      final safePageSize = query.pageSize < 1 ? 50 : query.pageSize;
-
-      final start = (safePage - 1) * safePageSize;
-      final end = start + safePageSize;
-
-      final paged = start >= filtered.length
-          ? <Appointment>[]
-          : filtered.sublist(
-              start,
-              end > filtered.length ? filtered.length : end,
-            );
-
-      return AppointmentListResult(
-        items: List<Appointment>.unmodifiable(paged),
-        totalCount: filtered.length,
-        page: safePage,
-        pageSize: safePageSize,
+    if (_isSlotAlreadyTaken(items, appointment)) {
+      throw AppointmentSlotUnavailableException(
+        practitionerId: appointment.practitionerId,
+        day: appointment.day,
+        slot: appointment.slot,
       );
     }
 
+    final updated = List<Appointment>.from(items)..add(appointment);
+    await _persist(updated);
+  }
+
+  @override
+  Future<AppointmentListResult> list(AppointmentListQuery query) async {
+    final items = await _loadItems();
+    var filtered = List<Appointment>.from(items);
+
+    final practitionerId = query.practitionerId?.trim();
+    if (practitionerId != null && practitionerId.isNotEmpty) {
+      filtered = filtered
+          .where((item) => item.practitionerId == practitionerId)
+          .toList();
+    }
+
+    if (query.status != null) {
+      filtered = filtered
+          .where((item) => item.status == query.status)
+          .toList();
+    }
+
+    if (query.from != null) {
+      final from = query.from!;
+      filtered = filtered
+          .where((item) => !item.scheduledAt.isBefore(from))
+          .toList();
+    }
+
+    if (query.to != null) {
+      final to = query.to!;
+      filtered = filtered
+          .where((item) => !item.scheduledAt.isAfter(to))
+          .toList();
+    }
+
+    filtered.sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    final safePage = query.page < 1 ? 1 : query.page;
+    final safePageSize = query.pageSize < 1 ? 50 : query.pageSize;
+
+    final start = (safePage - 1) * safePageSize;
+    final end = start + safePageSize;
+
+    final paged = start >= filtered.length
+        ? <Appointment>[]
+        : filtered.sublist(
+            start,
+            end > filtered.length ? filtered.length : end,
+          );
+
+    return AppointmentListResult(
+      items: List<Appointment>.unmodifiable(paged),
+      totalCount: filtered.length,
+      page: safePage,
+      pageSize: safePageSize,
+    );
+  }
+
   @override
   Future<Appointment?> getById(String id) async {
-    final normalizedId = id.trim();
+    final normalizedId = _normalizeId(id);
     if (normalizedId.isEmpty) return null;
 
     final items = await _loadItems();
@@ -129,6 +140,7 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
         return item;
       }
     }
+
     return null;
   }
 
@@ -137,8 +149,11 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     required String id,
     required AppointmentStatus status,
   }) async {
+    final normalizedId = _normalizeId(id);
+    if (normalizedId.isEmpty) return;
+
     final items = await _loadItems();
-    final index = items.indexWhere((e) => e.id == id);
+    final index = items.indexWhere((item) => item.id == normalizedId);
     if (index == -1) return;
 
     final updated = List<Appointment>.from(items);
@@ -152,8 +167,11 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     required DateTime day,
     required String slot,
   }) async {
+    final normalizedId = _normalizeId(id);
+    if (normalizedId.isEmpty) return null;
+
     final items = await _loadItems();
-    final index = items.indexWhere((e) => e.id == id);
+    final index = items.indexWhere((item) => item.id == normalizedId);
     if (index == -1) return null;
 
     final current = items[index];
@@ -161,12 +179,9 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
       return null;
     }
 
-    final normalizedDay = _normalizeDay(day);
-    final normalizedSlot = slot.trim();
-
     final candidate = current.copyWith(
-      day: normalizedDay,
-      slot: normalizedSlot,
+      day: _normalizeDay(day),
+      slot: _normalizeSlot(slot),
     );
 
     if (_isSlotAlreadyTaken(

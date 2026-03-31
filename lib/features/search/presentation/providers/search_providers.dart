@@ -54,8 +54,8 @@ class SearchFilters {
     required String where,
   }) {
     return SearchFilters(
-      what: what,
-      where: where,
+      what: _normalizeSearchText(what),
+      where: _normalizeSearchText(where),
       availableSoonOnly: false,
       city: null,
       sortMode: SortMode.recommended,
@@ -72,6 +72,18 @@ class SearchSeed {
 
   final String initialWhat;
   final String initialWhere;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is SearchSeed &&
+        other.initialWhat == initialWhat &&
+        other.initialWhere == initialWhere;
+  }
+
+  @override
+  int get hashCode => Object.hash(initialWhat, initialWhere);
 }
 
 final searchRepositoryProvider = Provider<SearchRepository>(
@@ -83,48 +95,64 @@ class SearchFiltersController extends StateNotifier<SearchFilters> {
   SearchFiltersController(SearchFilters filters) : super(filters);
 
   void setWhat(String value) {
-    state = state.copyWith(what: value);
+    final normalized = _normalizeSearchText(value);
+    if (normalized == state.what) return;
+    state = state.copyWith(what: normalized);
   }
 
   void setWhere(String value) {
-    state = state.copyWith(where: value);
+    final normalized = _normalizeSearchText(value);
+    if (normalized == state.where) return;
+    state = state.copyWith(where: normalized);
   }
 
   void setAvailableSoonOnly(bool value) {
+    if (value == state.availableSoonOnly) return;
     state = state.copyWith(availableSoonOnly: value);
   }
 
   void toggleAvailableSoon() {
-    state = state.copyWith(availableSoonOnly: !state.availableSoonOnly);
+    state = state.copyWith(
+      availableSoonOnly: !state.availableSoonOnly,
+    );
   }
 
   void setCity(String? value) {
-    final normalized = value?.trim();
-    if (normalized == null || normalized.isEmpty) {
+    final normalized = _normalizeOptionalFilterValue(value);
+    if (normalized == null) {
+      if (state.city == null) return;
       state = state.copyWith(clearCity: true);
       return;
     }
 
+    if (normalized == state.city) return;
     state = state.copyWith(city: normalized);
   }
 
   void setSortMode(SortMode value) {
+    if (value == state.sortMode) return;
     state = state.copyWith(sortMode: value);
   }
 
   void resetFilters() {
-    state = state.copyWith(
+    final nextState = state.copyWith(
       availableSoonOnly: false,
       city: null,
       sortMode: SortMode.recommended,
     );
+
+    if (nextState == state) return;
+    state = nextState;
   }
 
   void resetAll() {
-    state = SearchFilters.initial(
+    final nextState = SearchFilters.initial(
       what: '',
       where: '',
     );
+
+    if (nextState == state) return;
+    state = nextState;
   }
 }
 
@@ -166,13 +194,7 @@ final searchResultsProvider =
       where: filters.where,
       city: filters.city,
       availableSoonOnly: filters.availableSoonOnly,
-      sortMode: switch (filters.sortMode) {
-        SortMode.recommended => SearchSortMode.recommended,
-        SortMode.ratingDesc => SearchSortMode.ratingDesc,
-        SortMode.priceAsc => SearchSortMode.priceAsc,
-        SortMode.priceDesc => SearchSortMode.priceDesc,
-        SortMode.distanceAsc => SearchSortMode.distanceAsc,
-      },
+      sortMode: _mapSortMode(filters.sortMode),
       page: 1,
       pageSize: 200,
       userLatitude: userLat,
@@ -181,22 +203,10 @@ final searchResultsProvider =
   );
 
   final items = result.items;
-
-  final baseProfessional = items.cast<SearchItem?>().firstWhere(
-        (item) => item?.id == professionalProfile.id,
-        orElse: () => null,
-      );
-
-  final mergedItems = baseProfessional == null
-      ? items
-      : _replaceSearchItemById(
-          items: items,
-          id: professionalProfile.id,
-          replacement: resolvePractitionerData(
-            baseItem: baseProfessional,
-            profile: professionalProfile,
-          ).item,
-        );
+  final mergedItems = _mergeDynamicProfessionalItem(
+    items: items,
+    professionalProfile: professionalProfile,
+  );
 
   return List<SearchItem>.unmodifiable(mergedItems);
 }, name: 'searchResultsProvider');
@@ -204,13 +214,17 @@ final searchResultsProvider =
 final availableSearchCitiesProvider = Provider<List<String>>((ref) {
   final professionalProfile = ref.watch(professionalProfileProvider);
 
-  final cities = <String>{
-    for (final city in MockSearchData.cities())
-      if (city.trim().isNotEmpty) city.trim(),
-  };
+  final cities = <String>{};
 
-  final dynamicCity = professionalProfile.city.trim();
-  if (dynamicCity.isNotEmpty) {
+  for (final city in MockSearchData.cities()) {
+    final normalized = _normalizeOptionalFilterValue(city);
+    if (normalized != null) {
+      cities.add(normalized);
+    }
+  }
+
+  final dynamicCity = _normalizeOptionalFilterValue(professionalProfile.city);
+  if (dynamicCity != null) {
     cities.add(dynamicCity);
   }
 
@@ -219,3 +233,60 @@ final availableSearchCitiesProvider = Provider<List<String>>((ref) {
 
   return List<String>.unmodifiable(sorted);
 }, name: 'availableSearchCitiesProvider');
+
+SearchSortMode _mapSortMode(SortMode mode) {
+  switch (mode) {
+    case SortMode.recommended:
+      return SearchSortMode.recommended;
+    case SortMode.ratingDesc:
+      return SearchSortMode.ratingDesc;
+    case SortMode.priceAsc:
+      return SearchSortMode.priceAsc;
+    case SortMode.priceDesc:
+      return SearchSortMode.priceDesc;
+    case SortMode.distanceAsc:
+      return SearchSortMode.distanceAsc;
+  }
+}
+
+List<SearchItem> _mergeDynamicProfessionalItem({
+  required List<SearchItem> items,
+  required professionalProfile,
+}) {
+  final baseProfessional = items.cast<SearchItem?>().firstWhere(
+        (item) => item?.id == professionalProfile.id,
+        orElse: () => null,
+      );
+
+  if (baseProfessional == null) {
+    return items;
+  }
+
+  final resolved = resolvePractitionerData(
+    baseItem: baseProfessional,
+    profile: professionalProfile,
+  );
+
+  if (!resolved.usedProfileOverride) {
+    return items;
+  }
+
+  return _replaceSearchItemById(
+    items: items,
+    id: professionalProfile.id,
+    replacement: resolved.item,
+  );
+}
+
+String _normalizeSearchText(String value) {
+  return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+String? _normalizeOptionalFilterValue(String? value) {
+  if (value == null) return null;
+
+  final normalized = _normalizeSearchText(value);
+  if (normalized.isEmpty) return null;
+
+  return normalized;
+}

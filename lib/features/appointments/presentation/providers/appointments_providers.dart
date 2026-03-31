@@ -43,7 +43,11 @@ final appointmentByIdProvider =
 final appointmentsControllerProvider = Provider<AppointmentsController>(
   (ref) {
     final repo = ref.watch(appointmentsRepositoryProvider);
-    return AppointmentsController(ref: ref, repo: repo);
+    return AppointmentsController(
+      ref: ref,
+      repo: repo,
+      notifications: LocalNotificationsService.instance,
+    );
   },
   name: 'appointmentsControllerProvider',
 );
@@ -87,18 +91,23 @@ class AppointmentsFiltersController
   AppointmentsFiltersController() : super(AppointmentsFilters.initial);
 
   void setQuery(String value) {
-    state = state.copyWith(query: value);
+    final normalized = _normalizeSearch(value);
+    if (normalized == state.query) return;
+    state = state.copyWith(query: normalized);
   }
 
   void clearQuery() {
+    if (state.query.isEmpty) return;
     state = state.copyWith(query: '');
   }
 
   void setFilter(AppointmentsViewFilter value) {
+    if (value == state.filter) return;
     state = state.copyWith(filter: value);
   }
 
   void reset() {
+    if (state == AppointmentsFilters.initial) return;
     state = AppointmentsFilters.initial;
   }
 }
@@ -132,41 +141,13 @@ final appointmentsStatsProvider = FutureProvider<AppointmentsStats>(
   (ref) async {
     final items = await ref.watch(appointmentsListProvider.future);
 
-    final pendingCount = items
-        .where((a) => a.status == AppointmentStatus.pending)
-        .length;
-
-    final upcomingConfirmedCount = items
-        .where(
-          (a) => a.status == AppointmentStatus.confirmed && a.isUpcoming,
-        )
-        .length;
-
-    final confirmedCount = items
-        .where((a) => a.status == AppointmentStatus.confirmed)
-        .length;
-
-    final historyCount = items
-        .where(
-          (a) => a.status == AppointmentStatus.confirmed && !a.isUpcoming,
-        )
-        .length;
-
-    final cancelledCount = items
-        .where(
-          (a) =>
-              a.status == AppointmentStatus.cancelledByPatient ||
-              a.status == AppointmentStatus.declinedByProfessional,
-        )
-        .length;
-
     return AppointmentsStats(
       totalCount: items.length,
-      pendingCount: pendingCount,
-      upcomingConfirmedCount: upcomingConfirmedCount,
-      confirmedCount: confirmedCount,
-      historyCount: historyCount,
-      cancelledCount: cancelledCount,
+      pendingCount: items.where(_isPendingAppointment).length,
+      upcomingConfirmedCount: items.where(_isUpcomingConfirmedAppointment).length,
+      confirmedCount: items.where(_isConfirmedAppointment).length,
+      historyCount: items.where(_isHistoryAppointment).length,
+      cancelledCount: items.where(_isCancelledAppointment).length,
     );
   },
   name: 'appointmentsStatsProvider',
@@ -176,15 +157,10 @@ final nextUpcomingAppointmentProvider = FutureProvider<Appointment?>(
   (ref) async {
     final items = await ref.watch(appointmentsListProvider.future);
 
-    final upcoming = items
-        .where(
-          (a) => a.status == AppointmentStatus.confirmed && a.isUpcoming,
-        )
-        .toList()
+    final upcoming = items.where(_isUpcomingConfirmedAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    if (upcoming.isEmpty) return null;
-    return upcoming.first;
+    return upcoming.isEmpty ? null : upcoming.first;
   },
   name: 'nextUpcomingAppointmentProvider',
 );
@@ -194,64 +170,32 @@ final filteredAppointmentsProvider = FutureProvider<List<Appointment>>(
     final items = await ref.watch(appointmentsListProvider.future);
     final filters = ref.watch(appointmentsFiltersProvider);
 
-    final query = _normalize(filters.query);
+    final searchedItems = items.where(
+      (appointment) => _matchesAppointmentSearch(
+        appointment: appointment,
+        query: filters.query,
+      ),
+    );
 
-    final searchedItems = items.where((appointment) {
-      if (query.isEmpty) return true;
+    final filtered = searchedItems.where(
+      (appointment) => _matchesViewFilter(
+        appointment: appointment,
+        filter: filters.filter,
+      ),
+    ).toList();
 
-      final haystack = _normalize(
-        '${appointment.practitionerName} '
-        '${appointment.specialty} '
-        '${appointment.reason} '
-        '${appointment.fullAddress} '
-        '${appointment.slot}',
-      );
-
-      return haystack.contains(query);
-    }).toList();
-
-    final filtered = switch (filters.filter) {
-      AppointmentsViewFilter.all => searchedItems,
-      AppointmentsViewFilter.pending => searchedItems
-          .where((a) => a.status == AppointmentStatus.pending)
-          .toList(),
-      AppointmentsViewFilter.upcoming => searchedItems
-          .where(
-            (a) => a.status == AppointmentStatus.confirmed && a.isUpcoming,
-          )
-          .toList(),
-      AppointmentsViewFilter.history => searchedItems
-          .where(
-            (a) => a.status == AppointmentStatus.confirmed && !a.isUpcoming,
-          )
-          .toList(),
-      AppointmentsViewFilter.cancelled => searchedItems
-          .where(
-            (a) =>
-                a.status == AppointmentStatus.cancelledByPatient ||
-                a.status == AppointmentStatus.declinedByProfessional,
-          )
-          .toList(),
-    };
-
-    filtered.sort((a, b) {
-      switch (filters.filter) {
-        case AppointmentsViewFilter.pending:
-        case AppointmentsViewFilter.upcoming:
-          return a.scheduledAt.compareTo(b.scheduledAt);
-        case AppointmentsViewFilter.history:
-        case AppointmentsViewFilter.cancelled:
-          return b.scheduledAt.compareTo(a.scheduledAt);
-        case AppointmentsViewFilter.all:
-          return b.scheduledAt.compareTo(a.scheduledAt);
-      }
-    });
+    filtered.sort((a, b) => _compareAppointmentsForViewFilter(
+          a: a,
+          b: b,
+          filter: filters.filter,
+        ));
 
     return filtered;
   },
   name: 'filteredAppointmentsProvider',
 );
 
+@immutable
 class TakenSlotsQuery {
   const TakenSlotsQuery({
     required this.practitionerId,
@@ -279,45 +223,44 @@ class TakenSlotsQuery {
 final takenSlotsForPractitionerDayProvider =
     FutureProvider.family<Set<String>, TakenSlotsQuery>((ref, query) async {
   final items = await ref.watch(appointmentsListProvider.future);
+  final targetDay = query.normalizedDay;
 
-  final targetDay = DateTime(
-    query.day.year,
-    query.day.month,
-    query.day.day,
-  );
+  return items
+      .where((appointment) {
+        if (appointment.practitionerId != query.practitionerId) return false;
+        if (appointment.isCancelledLike) return false;
 
-  final taken = items.where((appointment) {
-    if (appointment.practitionerId != query.practitionerId) return false;
-    if (appointment.isCancelledLike) return false;
+        final appointmentDay = DateTime(
+          appointment.day.year,
+          appointment.day.month,
+          appointment.day.day,
+        );
 
-    final appointmentDay = DateTime(
-      appointment.day.year,
-      appointment.day.month,
-      appointment.day.day,
-    );
-
-    return appointmentDay == targetDay;
-  }).map((appointment) => appointment.slot).toSet();
-
-  return taken;
+        return appointmentDay == targetDay;
+      })
+      .map((appointment) => appointment.slot)
+      .toSet();
 }, name: 'takenSlotsForPractitionerDayProvider');
 
 class AppointmentsController {
   AppointmentsController({
     required Ref ref,
     required AppointmentsRepository repo,
+    required LocalNotificationsService notifications,
   })  : _ref = ref,
-        _repo = repo;
+        _repo = repo,
+        _notifications = notifications;
 
   final Ref _ref;
   final AppointmentsRepository _repo;
+  final LocalNotificationsService _notifications;
 
   Future<void> create(Appointment appointment) async {
     await _repo.create(appointment);
-    await LocalNotificationsService.instance.syncAppointment(appointment);
+    await _notifications.syncAppointment(appointment);
 
     _invalidateCollections();
-    _ref.invalidate(appointmentByIdProvider(appointment.id));
+    _invalidateAppointment(appointment.id);
     _invalidateTakenSlots(
       practitionerId: appointment.practitionerId,
       day: appointment.day,
@@ -333,14 +276,10 @@ class AppointmentsController {
     await _repo.updateStatus(id: id, status: status);
 
     final updated = await _repo.getById(id);
-    if (updated != null) {
-      await LocalNotificationsService.instance.syncAppointment(updated);
-    } else {
-      await LocalNotificationsService.instance.cancelAppointmentReminder(id);
-    }
+    await _syncNotificationForAppointment(id: id, appointment: updated);
 
     _invalidateCollections();
-    _ref.invalidate(appointmentByIdProvider(id));
+    _invalidateAppointment(id);
 
     if (before != null) {
       _invalidateTakenSlots(
@@ -371,12 +310,10 @@ class AppointmentsController {
       slot: slot,
     );
 
-    if (updated != null) {
-      await LocalNotificationsService.instance.syncAppointment(updated);
-    }
+    await _syncNotificationForAppointment(id: id, appointment: updated);
 
     _invalidateCollections();
-    _ref.invalidate(appointmentByIdProvider(id));
+    _invalidateAppointment(id);
 
     _invalidateTakenSlots(
       practitionerId: before.practitionerId,
@@ -405,13 +342,13 @@ class AppointmentsController {
     await _repo.clear();
 
     for (final item in items) {
-      await LocalNotificationsService.instance
-          .cancelAppointmentReminder(item.id);
+      await _notifications.cancelAppointmentReminder(item.id);
     }
 
     _invalidateCollections();
+
     for (final item in items) {
-      _ref.invalidate(appointmentByIdProvider(item.id));
+      _invalidateAppointment(item.id);
       _invalidateTakenSlots(
         practitionerId: item.practitionerId,
         day: item.day,
@@ -419,11 +356,27 @@ class AppointmentsController {
     }
   }
 
+  Future<void> _syncNotificationForAppointment({
+    required String id,
+    required Appointment? appointment,
+  }) async {
+    if (appointment != null) {
+      await _notifications.syncAppointment(appointment);
+      return;
+    }
+
+    await _notifications.cancelAppointmentReminder(id);
+  }
+
   void _invalidateCollections() {
     _ref.invalidate(appointmentsListProvider);
     _ref.invalidate(appointmentsStatsProvider);
     _ref.invalidate(nextUpcomingAppointmentProvider);
     _ref.invalidate(filteredAppointmentsProvider);
+  }
+
+  void _invalidateAppointment(String id) {
+    _ref.invalidate(appointmentByIdProvider(id));
   }
 
   void _invalidateTakenSlots({
@@ -441,7 +394,79 @@ class AppointmentsController {
   }
 }
 
-String _normalize(String value) {
+bool _matchesAppointmentSearch({
+  required Appointment appointment,
+  required String query,
+}) {
+  if (query.isEmpty) return true;
+
+  final haystack = _normalizeSearch(
+    '${appointment.practitionerName} '
+    '${appointment.specialty} '
+    '${appointment.reason} '
+    '${appointment.fullAddress} '
+    '${appointment.slot}',
+  );
+
+  return haystack.contains(query);
+}
+
+bool _matchesViewFilter({
+  required Appointment appointment,
+  required AppointmentsViewFilter filter,
+}) {
+  switch (filter) {
+    case AppointmentsViewFilter.all:
+      return true;
+    case AppointmentsViewFilter.pending:
+      return _isPendingAppointment(appointment);
+    case AppointmentsViewFilter.upcoming:
+      return _isUpcomingConfirmedAppointment(appointment);
+    case AppointmentsViewFilter.history:
+      return _isHistoryAppointment(appointment);
+    case AppointmentsViewFilter.cancelled:
+      return _isCancelledAppointment(appointment);
+  }
+}
+
+int _compareAppointmentsForViewFilter({
+  required Appointment a,
+  required Appointment b,
+  required AppointmentsViewFilter filter,
+}) {
+  switch (filter) {
+    case AppointmentsViewFilter.pending:
+    case AppointmentsViewFilter.upcoming:
+      return a.scheduledAt.compareTo(b.scheduledAt);
+    case AppointmentsViewFilter.history:
+    case AppointmentsViewFilter.cancelled:
+    case AppointmentsViewFilter.all:
+      return b.scheduledAt.compareTo(a.scheduledAt);
+  }
+}
+
+bool _isPendingAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.pending;
+}
+
+bool _isConfirmedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.confirmed;
+}
+
+bool _isUpcomingConfirmedAppointment(Appointment appointment) {
+  return _isConfirmedAppointment(appointment) && appointment.isUpcoming;
+}
+
+bool _isHistoryAppointment(Appointment appointment) {
+  return _isConfirmedAppointment(appointment) && !appointment.isUpcoming;
+}
+
+bool _isCancelledAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.cancelledByPatient ||
+      appointment.status == AppointmentStatus.declinedByProfessional;
+}
+
+String _normalizeSearch(String value) {
   return value
       .trim()
       .toLowerCase()
