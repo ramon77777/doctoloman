@@ -28,23 +28,36 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
 
   @override
   void dispose() {
-    _searchCtrl.removeListener(_onSearchChanged);
-    _searchCtrl.dispose();
+    _searchCtrl
+      ..removeListener(_onSearchChanged)
+      ..dispose();
     super.dispose();
   }
 
   void _onSearchChanged() {
-    ref
-        .read(appointmentsFiltersProvider.notifier)
-        .setQuery(_searchCtrl.text);
+    ref.read(appointmentsFiltersProvider.notifier).setQuery(_searchCtrl.text);
   }
 
   Future<void> _refresh() async {
+    _invalidateAppointmentsQueries();
+    await ref.read(appointmentsListProvider.future);
+  }
+
+  void _invalidateAppointmentsQueries() {
     ref.invalidate(appointmentsListProvider);
     ref.invalidate(appointmentsStatsProvider);
     ref.invalidate(nextUpcomingAppointmentProvider);
     ref.invalidate(filteredAppointmentsProvider);
-    await ref.read(appointmentsListProvider.future);
+  }
+
+  void _syncSearchControllerIfNeeded(String query) {
+    if (_searchCtrl.text == query) return;
+
+    _searchCtrl.value = _searchCtrl.value.copyWith(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+      composing: TextRange.empty,
+    );
   }
 
   @override
@@ -55,13 +68,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
     final nextAppointmentAsync = ref.watch(nextUpcomingAppointmentProvider);
     final filters = ref.watch(appointmentsFiltersProvider);
 
-    if (_searchCtrl.text != filters.query) {
-      _searchCtrl.value = _searchCtrl.value.copyWith(
-        text: filters.query,
-        selection: TextSelection.collapsed(offset: filters.query.length),
-        composing: TextRange.empty,
-      );
-    }
+    _syncSearchControllerIfNeeded(filters.query);
 
     return Scaffold(
       appBar: AppBar(
@@ -69,7 +76,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
         actions: [
           IconButton(
             tooltip: 'Rafraîchir',
-            onPressed: () => ref.invalidate(appointmentsListProvider),
+            onPressed: _invalidateAppointmentsQueries,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -145,9 +152,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                               onPressed: () {
                                 _searchCtrl.clear();
                                 ref
-                                    .read(
-                                      appointmentsFiltersProvider.notifier,
-                                    )
+                                    .read(appointmentsFiltersProvider.notifier)
                                     .clearQuery();
                               },
                               icon: const Icon(Icons.close),
@@ -212,8 +217,8 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                         child: CircularProgressIndicator(),
                       ),
                     ),
-                    error: (e, _) => ErrorStateView(
-                      message: '$e',
+                    error: (error, _) => ErrorStateView(
+                      message: '$error',
                     ),
                   ),
                 ],
@@ -223,8 +228,8 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
           loading: () => const Center(
             child: CircularProgressIndicator(),
           ),
-          error: (e, _) => ErrorStateView(
-            message: '$e',
+          error: (error, _) => ErrorStateView(
+            message: '$error',
           ),
         ),
       ),
@@ -258,12 +263,12 @@ class _AppointmentsStatsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Wrap(
@@ -286,13 +291,13 @@ class _StatsBarSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     Widget chip() => Container(
           height: 34,
           width: 120,
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(999),
           ),
         );
@@ -315,12 +320,12 @@ class _ReminderInfoBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -329,7 +334,7 @@ class _ReminderInfoBanner extends StatelessWidget {
           Icon(
             Icons.info_outline,
             size: 18,
-            color: cs.primary,
+            color: colorScheme.primary,
           ),
           const SizedBox(width: 8),
           const Expanded(
@@ -352,10 +357,10 @@ class _NextAppointmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
-      color: cs.primaryContainer,
+      color: colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -363,7 +368,7 @@ class _NextAppointmentCard extends StatelessWidget {
           children: [
             Icon(
               Icons.schedule_outlined,
-              color: cs.onPrimaryContainer,
+              color: colorScheme.onPrimaryContainer,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -373,21 +378,21 @@ class _NextAppointmentCard extends StatelessWidget {
                   Text(
                     'Prochain rendez-vous',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: cs.onPrimaryContainer,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${appointment.practitionerName} • ${appointment.specialty}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onPrimaryContainer,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${AppDateFormatters.formatShortDate(appointment.day)} à ${appointment.slot}',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onPrimaryContainer,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                   ),
                 ],
@@ -491,14 +496,14 @@ class _StatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: cs.surface,
+        color: colorScheme.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: cs.outlineVariant),
+        border: Border.all(color: colorScheme.outlineVariant),
       ),
       child: Text(
         label,
@@ -521,12 +526,12 @@ class _AppointmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final subtitle =
         '${AppDateFormatters.formatShortDate(appointment.day)} à ${appointment.slot}\n${appointment.fullAddress}';
 
     return Card(
-      color: highlight ? cs.primaryContainer.withValues(alpha: 0.35) : null,
+      color: highlight ? colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
@@ -539,12 +544,12 @@ class _AppointmentCard extends StatelessWidget {
                 height: 46,
                 width: 46,
                 decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
+                  color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   Icons.event_note_outlined,
-                  color: cs.primary,
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -560,14 +565,14 @@ class _AppointmentCard extends StatelessWidget {
                     Text(
                       appointment.specialty,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                     ),
                     const SizedBox(height: 10),
@@ -589,7 +594,10 @@ class _AppointmentCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+              Icon(
+                Icons.chevron_right,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),

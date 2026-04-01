@@ -10,20 +10,22 @@ class MockPharmacyRepository implements PharmacyRepository {
   @override
   Future<List<Pharmacy>> getAll() async {
     await Future<void>.delayed(_artificialDelay);
-    return List<Pharmacy>.unmodifiable(MockPharmaciesData.items());
+
+    final items = MockPharmaciesData.items();
+    return List<Pharmacy>.unmodifiable(items);
   }
 
   @override
   Future<List<Pharmacy>> getOnDuty() async {
     final all = await getAll();
-    return List<Pharmacy>.unmodifiable(
-      all.where((pharmacy) => pharmacy.isOnDuty),
-    );
+
+    final onDutyItems = all.where((pharmacy) => pharmacy.isOnDuty).toList();
+    return List<Pharmacy>.unmodifiable(onDutyItems);
   }
 
   @override
   Future<Pharmacy?> getById(String id) async {
-    final normalizedId = id.trim();
+    final normalizedId = _normalizeId(id);
     if (normalizedId.isEmpty) return null;
 
     final all = await getAll();
@@ -34,5 +36,9 @@ class MockPharmacyRepository implements PharmacyRepository {
     }
 
     return null;
+  }
+
+  String _normalizeId(String value) {
+    return value.trim();
   }
 }

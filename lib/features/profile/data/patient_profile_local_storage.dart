@@ -9,20 +9,28 @@ class PatientProfileLocalStorage {
 
   final SharedPreferences _prefs;
 
-  static const _key = 'patient.profile';
+  static const String _key = 'patient.profile';
 
   Future<void> save(PatientProfile profile) async {
-    final json = jsonEncode(profile.toMap());
-    await _prefs.setString(_key, json);
+    final payload = jsonEncode(profile.toMap());
+    await _prefs.setString(_key, payload);
   }
 
   PatientProfile? read() {
     final raw = _prefs.getString(_key);
-    if (raw == null || raw.isEmpty) return null;
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
 
     try {
-      final map = jsonDecode(raw) as Map<String, dynamic>;
-      return PatientProfile.fromMap(map);
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return null;
+      }
+
+      return PatientProfile.fromMap(
+        Map<String, dynamic>.from(decoded),
+      );
     } catch (_) {
       return null;
     }

@@ -9,10 +9,14 @@ class InMemoryPatientProfileRepository implements PatientProfileRepository {
 
   PatientProfile? _cache;
 
-  @override
-  Future<PatientProfile?> get() async {
+  Future<PatientProfile?> _loadCachedOrStored() async {
     _cache ??= _localStorage.read();
     return _cache;
+  }
+
+  @override
+  Future<PatientProfile?> get() async {
+    return _loadCachedOrStored();
   }
 
   @override

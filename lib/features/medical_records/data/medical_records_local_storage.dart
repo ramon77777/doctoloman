@@ -9,35 +9,43 @@ class MedicalRecordsLocalStorage {
 
   final SharedPreferences _prefs;
 
-  static const _key = 'medical_records.items';
+  static const String _key = 'medical_records.items';
 
   Future<List<MedicalRecord>> readAll() async {
     final raw = _prefs.getString(_key);
     if (raw == null || raw.trim().isEmpty) {
-      return <MedicalRecord>[];
+      return const <MedicalRecord>[];
     }
 
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List) {
-        return <MedicalRecord>[];
+        return const <MedicalRecord>[];
       }
 
-      return decoded
-          .whereType<Map>()
-          .map(
-            (item) => MedicalRecord.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
-          )
-          .toList();
+      final items = <MedicalRecord>[];
+
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+
+        try {
+          final record = MedicalRecord.fromMap(
+            Map<String, dynamic>.from(entry),
+          );
+          items.add(record);
+        } catch (_) {
+          // Ignore uniquement l'entrée invalide pour préserver le reste.
+        }
+      }
+
+      return List<MedicalRecord>.unmodifiable(items);
     } catch (_) {
-      return <MedicalRecord>[];
+      return const <MedicalRecord>[];
     }
   }
 
   Future<void> saveAll(List<MedicalRecord> items) async {
-    final payload = items.map((e) => e.toMap()).toList();
+    final payload = items.map((item) => item.toMap()).toList(growable: false);
     await _prefs.setString(_key, jsonEncode(payload));
   }
 

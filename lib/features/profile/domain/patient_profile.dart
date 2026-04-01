@@ -8,21 +8,32 @@ enum PatientGender {
 
 @immutable
 class PatientProfile {
-  const PatientProfile({
-    required this.id,
-    required this.name,
-    required this.phone,
-    this.city,
-    this.district,
-    this.address,
-    this.birthDate,
+  PatientProfile({
+    required String id,
+    required String name,
+    required String phone,
+    String? city,
+    String? district,
+    String? address,
+    DateTime? birthDate,
     this.gender,
-    this.bloodGroup,
-    this.allergies,
-    this.medicalNotes,
-    this.emergencyContactName,
-    this.emergencyContactPhone,
-  });
+    String? bloodGroup,
+    String? allergies,
+    String? medicalNotes,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
+  })  : id = _cleanText(id),
+        name = _cleanText(name),
+        phone = _cleanText(phone),
+        city = _cleanNullableText(city),
+        district = _cleanNullableText(district),
+        address = _cleanNullableText(address),
+        birthDate = birthDate == null ? null : _normalizeDate(birthDate),
+        bloodGroup = _cleanNullableText(bloodGroup),
+        allergies = _cleanNullableMultilineText(allergies),
+        medicalNotes = _cleanNullableMultilineText(medicalNotes),
+        emergencyContactName = _cleanNullableText(emergencyContactName),
+        emergencyContactPhone = _cleanNullableText(emergencyContactPhone);
 
   final String id;
   final String name;
@@ -40,6 +51,19 @@ class PatientProfile {
 
   final String? emergencyContactName;
   final String? emergencyContactPhone;
+
+  bool get hasCity => city != null && city!.isNotEmpty;
+  bool get hasDistrict => district != null && district!.isNotEmpty;
+  bool get hasAddress => address != null && address!.isNotEmpty;
+  bool get hasBirthDate => birthDate != null;
+  bool get hasGender => gender != null;
+  bool get hasBloodGroup => bloodGroup != null && bloodGroup!.isNotEmpty;
+  bool get hasAllergies => allergies != null && allergies!.isNotEmpty;
+  bool get hasMedicalNotes => medicalNotes != null && medicalNotes!.isNotEmpty;
+  bool get hasEmergencyContactName =>
+      emergencyContactName != null && emergencyContactName!.isNotEmpty;
+  bool get hasEmergencyContactPhone =>
+      emergencyContactPhone != null && emergencyContactPhone!.isNotEmpty;
 
   PatientProfile copyWith({
     String? id,
@@ -77,25 +101,25 @@ class PatientProfile {
   }
 
   bool get isComplete =>
-      name.trim().isNotEmpty &&
-      phone.trim().isNotEmpty &&
-      (city?.trim().isNotEmpty ?? false) &&
+      name.isNotEmpty &&
+      phone.isNotEmpty &&
+      hasCity &&
       birthDate != null &&
       gender != null;
 
   int get completionScore {
     var score = 0;
 
-    if (name.trim().isNotEmpty) score++;
-    if (phone.trim().isNotEmpty) score++;
-    if ((city?.trim().isNotEmpty ?? false)) score++;
-    if ((district?.trim().isNotEmpty ?? false)) score++;
-    if ((address?.trim().isNotEmpty ?? false)) score++;
-    if (birthDate != null) score++;
-    if (gender != null) score++;
-    if ((bloodGroup?.trim().isNotEmpty ?? false)) score++;
-    if ((emergencyContactName?.trim().isNotEmpty ?? false)) score++;
-    if ((emergencyContactPhone?.trim().isNotEmpty ?? false)) score++;
+    if (name.isNotEmpty) score++;
+    if (phone.isNotEmpty) score++;
+    if (hasCity) score++;
+    if (hasDistrict) score++;
+    if (hasAddress) score++;
+    if (hasBirthDate) score++;
+    if (hasGender) score++;
+    if (hasBloodGroup) score++;
+    if (hasEmergencyContactName) score++;
+    if (hasEmergencyContactPhone) score++;
 
     return score;
   }
@@ -131,9 +155,7 @@ class PatientProfile {
       city: map['city'] as String?,
       district: map['district'] as String?,
       address: map['address'] as String?,
-      birthDate: map['birthDate'] != null
-          ? DateTime.tryParse(map['birthDate'] as String)
-          : null,
+      birthDate: _parseNullableDate(map['birthDate']),
       gender: _genderFromString(map['gender'] as String?),
       bloodGroup: map['bloodGroup'] as String?,
       allergies: map['allergies'] as String?,
@@ -154,5 +176,84 @@ class PatientProfile {
       default:
         return null;
     }
+  }
+
+  static DateTime? _parseNullableDate(Object? raw) {
+    if (raw is! String || raw.trim().isEmpty) return null;
+
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return null;
+
+    return _normalizeDate(parsed);
+  }
+
+  static DateTime _normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  static String _cleanText(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  static String? _cleanNullableText(String? value) {
+    if (value == null) return null;
+
+    final cleaned = _cleanText(value);
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  static String? _cleanNullableMultilineText(String? value) {
+    if (value == null) return null;
+
+    final cleaned = value
+        .trim()
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is PatientProfile &&
+        other.id == id &&
+        other.name == name &&
+        other.phone == phone &&
+        other.city == city &&
+        other.district == district &&
+        other.address == address &&
+        other.birthDate == birthDate &&
+        other.gender == gender &&
+        other.bloodGroup == bloodGroup &&
+        other.allergies == allergies &&
+        other.medicalNotes == medicalNotes &&
+        other.emergencyContactName == emergencyContactName &&
+        other.emergencyContactPhone == emergencyContactPhone;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      id,
+      name,
+      phone,
+      city,
+      district,
+      address,
+      birthDate,
+      gender,
+      bloodGroup,
+      allergies,
+      medicalNotes,
+      emergencyContactName,
+      emergencyContactPhone,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'PatientProfile(id: $id, name: $name, phone: $phone)';
   }
 }

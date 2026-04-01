@@ -10,7 +10,8 @@ class MedicalRecordsPage extends ConsumerStatefulWidget {
   const MedicalRecordsPage({super.key});
 
   @override
-  ConsumerState<MedicalRecordsPage> createState() => _MedicalRecordsPageState();
+  ConsumerState<MedicalRecordsPage> createState() =>
+      _MedicalRecordsPageState();
 }
 
 class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
@@ -42,11 +43,23 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
     );
   }
 
+  void _syncQueryControllerIfNeeded(String query) {
+    if (_queryCtrl.text == query) return;
+
+    _queryCtrl.value = _queryCtrl.value.copyWith(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+      composing: TextRange.empty,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final recordsAsync = ref.watch(medicalRecordsListProvider);
     final filteredItems = ref.watch(filteredMedicalRecordsProvider);
     final filters = ref.watch(medicalRecordsFiltersProvider);
+
+    _syncQueryControllerIfNeeded(filters.query);
 
     return Scaffold(
       appBar: AppBar(
@@ -182,7 +195,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  _SectionTitle(
+                  const _SectionTitle(
                     title: 'Documents disponibles',
                     subtitle:
                         'Consultez vos documents enregistrés localement',
@@ -306,7 +319,7 @@ class _GroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Row(
       children: [
@@ -319,7 +332,7 @@ class _GroupHeader extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
+            color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -448,22 +461,60 @@ class _MedicalRecordsFiltersSheetState
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: RadioGroup<MedicalRecordsSortMode>(
-                      groupValue: _sortMode,
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _sortMode = value);
-                      },
-                      child: Column(
-                        children: [
-                          for (final mode in MedicalRecordsSortMode.values)
-                            RadioListTile<MedicalRecordsSortMode>(
-                              value: mode,
-                              title: Text(_sortLabel(mode)),
-                              contentPadding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        for (final mode in MedicalRecordsSortMode.values)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => setState(() => _sortMode = mode),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _sortMode == mode
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _sortMode == mode
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .outlineVariant,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _sortMode == mode
+                                          ? Icons.radio_button_checked
+                                          : Icons.radio_button_off,
+                                      size: 20,
+                                      color: _sortMode == mode
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(_sortLabel(mode)),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -553,7 +604,7 @@ class _RecordsOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
@@ -583,7 +634,7 @@ class _RecordsOverviewCard extends StatelessWidget {
             Text(
               'Les documents sensibles doivent être consultés dans un cadre protégé, avec contrôle d’accès et traçabilité complète côté backend dans la version cible.',
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -607,12 +658,12 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: cs.primary),
+        Icon(icon, size: 20, color: colorScheme.primary),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -623,7 +674,7 @@ class _SectionTitle extends StatelessWidget {
               Text(
                 subtitle,
                 style: textTheme.bodySmall?.copyWith(
-                  color: cs.onSurfaceVariant,
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -679,7 +730,7 @@ class _MedicalRecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: InkWell(
@@ -694,12 +745,12 @@ class _MedicalRecordCard extends StatelessWidget {
                 height: 46,
                 width: 46,
                 decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest,
+                  color: colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   _iconFor(record.category),
-                  color: cs.primary,
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 12),
@@ -715,7 +766,7 @@ class _MedicalRecordCard extends StatelessWidget {
                     Text(
                       record.sourceLabel,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                     ),
                     const SizedBox(height: 8),
@@ -724,7 +775,7 @@ class _MedicalRecordCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                     ),
                     const SizedBox(height: 10),
@@ -742,7 +793,10 @@ class _MedicalRecordCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+              Icon(
+                Icons.chevron_right,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
         ),
@@ -758,18 +812,18 @@ class _MiniBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: cs.onSurface,
+          color: colorScheme.onSurface,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -784,18 +838,18 @@ class _InfoBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, size: 18, color: cs.primary),
+          Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(child: Text(text)),
         ],
@@ -810,7 +864,7 @@ class _EmptyRecordsState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
       child: Padding(
@@ -821,7 +875,7 @@ class _EmptyRecordsState extends StatelessWidget {
             Icon(
               Icons.folder_open_outlined,
               size: 48,
-              color: cs.onSurfaceVariant,
+              color: colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
@@ -833,7 +887,7 @@ class _EmptyRecordsState extends StatelessWidget {
             Text(
               'Ajoute un document médical pour commencer.',
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
@@ -849,7 +903,7 @@ class _EmptyFilteredState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
@@ -860,7 +914,7 @@ class _EmptyFilteredState extends StatelessWidget {
             Icon(
               Icons.manage_search_outlined,
               size: 42,
-              color: cs.onSurfaceVariant,
+              color: colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
@@ -872,7 +926,7 @@ class _EmptyFilteredState extends StatelessWidget {
             Text(
               'Essaie une autre recherche ou réinitialise les filtres.',
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
@@ -895,7 +949,7 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
       child: Padding(
@@ -906,7 +960,7 @@ class _ErrorState extends StatelessWidget {
             Icon(
               Icons.error_outline,
               size: 44,
-              color: cs.onSurfaceVariant,
+              color: colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
@@ -918,7 +972,7 @@ class _ErrorState extends StatelessWidget {
             Text(
               message,
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),

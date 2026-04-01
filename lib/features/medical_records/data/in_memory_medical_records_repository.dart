@@ -15,21 +15,27 @@ class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
   }
 
   Future<void> _persist(List<MedicalRecord> items) async {
-    _cache = List<MedicalRecord>.from(items);
+    _cache = List<MedicalRecord>.unmodifiable(items);
     await _localStorage.saveAll(_cache!);
+  }
+
+  String _normalizeId(String value) {
+    return value.trim();
   }
 
   @override
   Future<List<MedicalRecord>> listAll() async {
     final items = await _loadItems();
+
     final copy = List<MedicalRecord>.from(items)
       ..sort((a, b) => b.recordDate.compareTo(a.recordDate));
-    return copy;
+
+    return List<MedicalRecord>.unmodifiable(copy);
   }
 
   @override
   Future<MedicalRecord?> getById(String id) async {
-    final normalizedId = id.trim();
+    final normalizedId = _normalizeId(id);
     if (normalizedId.isEmpty) return null;
 
     final items = await _loadItems();
@@ -38,6 +44,7 @@ class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
         return item;
       }
     }
+
     return null;
   }
 
@@ -50,8 +57,11 @@ class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
 
   @override
   Future<void> update(MedicalRecord record) async {
+    final normalizedId = _normalizeId(record.id);
+    if (normalizedId.isEmpty) return;
+
     final items = await _loadItems();
-    final index = items.indexWhere((item) => item.id == record.id);
+    final index = items.indexWhere((item) => item.id == normalizedId);
     if (index == -1) return;
 
     final updated = List<MedicalRecord>.from(items);
@@ -61,7 +71,7 @@ class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
 
   @override
   Future<void> deleteById(String id) async {
-    final normalizedId = id.trim();
+    final normalizedId = _normalizeId(id);
     if (normalizedId.isEmpty) return;
 
     final items = await _loadItems();

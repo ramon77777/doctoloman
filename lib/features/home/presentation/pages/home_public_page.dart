@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-
 import '../../../../app/router/app_routes.dart';
 import '../../../../app/router/route_args.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -39,6 +38,15 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
   }
 
   void _unfocus() => FocusManager.instance.primaryFocus?.unfocus();
+
+  void _showMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+  }
 
   void _recomputeCanSearch() {
     final what = _whatCtrl.text.trim();
@@ -114,12 +122,6 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     });
   }
 
-  Future<void> _openProfessionalSpace() async {
-    await _navigateSafely(() async {
-      await Navigator.of(context).pushNamed(AppRoutes.professionalHome);
-    });
-  }
-
   void _onLogin() => _goToAuth(isSignup: false);
 
   void _onSignup() => _goToAuth(isSignup: true);
@@ -128,12 +130,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     await ref.read(authControllerProvider.notifier).logout();
 
     if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vous êtes déconnecté.'),
-      ),
-    );
+    _showMessage('Vous êtes déconnecté.');
   }
 
   Future<void> _showAccountSheet() async {
@@ -145,7 +142,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
       showDragHandle: true,
       builder: (context) {
         final textTheme = Theme.of(context).textTheme;
-        final cs = Theme.of(context).colorScheme;
+        final colorScheme = Theme.of(context).colorScheme;
 
         return SafeArea(
           child: Padding(
@@ -160,7 +157,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
+                    color: colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Column(
@@ -174,7 +171,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                       Text(
                         user?.phone ?? 'Téléphone non disponible',
                         style: textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -234,7 +231,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     final user = authState.user;
 
     final textTheme = Theme.of(context).textTheme;
-    final w = MediaQuery.of(context).size.width;
+    final width = MediaQuery.of(context).size.width;
 
     final canSubmitSearch = _canSearch && !_isNavigating;
     final canTapQuickActions = !_isNavigating;
@@ -272,7 +269,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
               ),
               actions: [
                 if (!isAuthenticated) ...[
-                  if (w < 360)
+                  if (width < 360)
                     PopupMenuButton<_AuthAction>(
                       tooltip: 'Compte',
                       onSelected: (value) {
@@ -298,7 +295,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                         ),
                       ],
                     )
-                  else if (w < 430)
+                  else if (width < 430)
                     Row(
                       children: [
                         IconButton(
@@ -354,7 +351,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                               const SizedBox(width: 6),
                               ConstrainedBox(
                                 constraints: BoxConstraints(
-                                  maxWidth: w < 380 ? 72 : 110,
+                                  maxWidth: width < 380 ? 72 : 110,
                                 ),
                                 child: Text(
                                   user?.name ?? 'Compte',
@@ -495,15 +492,6 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                     ),
                     const SizedBox(height: 12),
                     _QuickActionCard(
-                      icon: Icons.business_center_outlined,
-                      title: 'Espace professionnel',
-                      subtitle:
-                          'Accéder au tableau de bord des professionnels de santé',
-                      enabled: canTapQuickActions,
-                      onTap: _openProfessionalSpace,
-                    ),
-                    const SizedBox(height: 12),
-                    _QuickActionCard(
                       icon: Icons.video_call_outlined,
                       title: 'Téléconsultation',
                       subtitle: isAuthenticated
@@ -511,13 +499,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                           : 'Consultation à distance (connexion requise)',
                       enabled: canTapQuickActions,
                       onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Téléconsultation bientôt disponible.',
-                            ),
-                          ),
-                        );
+                        _showMessage('Téléconsultation bientôt disponible.');
                       },
                     ),
                     const SizedBox(height: 20),

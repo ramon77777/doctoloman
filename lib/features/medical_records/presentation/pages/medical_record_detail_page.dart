@@ -80,9 +80,12 @@ class MedicalRecordDetailPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Document supprimé.')),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Document supprimé.')),
+      );
 
     Navigator.of(context).pop();
   }
@@ -140,7 +143,7 @@ class MedicalRecordDetailPage extends ConsumerWidget {
               );
             }
 
-            final cs = Theme.of(context).colorScheme;
+            final colorScheme = Theme.of(context).colorScheme;
             final textTheme = Theme.of(context).textTheme;
 
             return ListView(
@@ -156,12 +159,12 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                           height: 58,
                           width: 58,
                           decoration: BoxDecoration(
-                            color: cs.primaryContainer,
+                            color: colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Icon(
                             _iconFor(record.category),
-                            color: cs.onPrimaryContainer,
+                            color: colorScheme.onPrimaryContainer,
                             size: 28,
                           ),
                         ),
@@ -178,7 +181,7 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                               Text(
                                 record.sourceLabel,
                                 style: textTheme.bodyMedium?.copyWith(
-                                  color: cs.onSurfaceVariant,
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -186,8 +189,12 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                                 spacing: 8,
                                 runSpacing: 8,
                                 children: [
-                                  _Badge(label: _categoryLabel(record.category)),
-                                  _Badge(label: _formatDate(record.recordDate)),
+                                  _Badge(
+                                    label: _categoryLabel(record.category),
+                                  ),
+                                  _Badge(
+                                    label: _formatDate(record.recordDate),
+                                  ),
                                   if (record.isSensitive)
                                     const _Badge(label: 'Donnée sensible'),
                                 ],
@@ -252,9 +259,7 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                     Text(
                       'En production, les données médicales sensibles devront rester hébergées localement en Côte d’Ivoire, avec contrôle d’accès, consentement patient et journalisation.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ],
@@ -289,7 +294,7 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return Card(
@@ -318,7 +323,7 @@ class _StatusCard extends StatelessWidget {
             Text(
               'Ce document fait partie du dossier médical numérique local de cette version de démonstration.',
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -342,7 +347,7 @@ class _InfoSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
@@ -352,7 +357,7 @@ class _InfoSectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 20, color: cs.primary),
+                Icon(icon, size: 20, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(title, style: textTheme.titleMedium),
               ],
@@ -378,7 +383,7 @@ class _Line extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -390,7 +395,7 @@ class _Line extends StatelessWidget {
             child: Text(
               label,
               style: textTheme.labelLarge?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -413,18 +418,18 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: cs.onSurface,
+          color: colorScheme.onSurface,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -446,7 +451,7 @@ class _MessageState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
       child: Padding(
@@ -454,7 +459,7 @@ class _MessageState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 44, color: cs.onSurfaceVariant),
+            Icon(icon, size: 44, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               title,
@@ -465,7 +470,7 @@ class _MessageState extends StatelessWidget {
             Text(
               message,
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),

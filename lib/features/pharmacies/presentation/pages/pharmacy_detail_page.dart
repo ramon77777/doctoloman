@@ -14,6 +14,15 @@ class PharmacyDetailPage extends ConsumerWidget {
 
   final String? pharmacyId;
 
+  void _showMessage(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+  }
+
   Future<void> _callPharmacy(BuildContext context, String phone) async {
     final cleaned = phone.replaceAll(' ', '');
     final uri = Uri(scheme: 'tel', path: cleaned);
@@ -24,11 +33,7 @@ class PharmacyDetailPage extends ConsumerWidget {
     );
 
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible d’ouvrir l’appel téléphonique.'),
-        ),
-      );
+      _showMessage(context, 'Impossible d’ouvrir l’appel téléphonique.');
     }
   }
 
@@ -38,12 +43,9 @@ class PharmacyDetailPage extends ConsumerWidget {
 
     if (lat == null || lng == null) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Coordonnées GPS indisponibles pour cette pharmacie.',
-            ),
-          ),
+        _showMessage(
+          context,
+          'Coordonnées GPS indisponibles pour cette pharmacie.',
         );
       }
       return;
@@ -59,22 +61,15 @@ class PharmacyDetailPage extends ConsumerWidget {
     );
 
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible d’ouvrir l’itinéraire.'),
-        ),
-      );
+      _showMessage(context, 'Impossible d’ouvrir l’itinéraire.');
     }
   }
 
   Future<void> _copyPhone(BuildContext context, String phone) async {
     await Clipboard.setData(ClipboardData(text: phone));
+
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Numéro copié.'),
-        ),
-      );
+      _showMessage(context, 'Numéro copié.');
     }
   }
 
@@ -84,6 +79,7 @@ class PharmacyDetailPage extends ConsumerWidget {
 
     if (normalizedId == null || normalizedId.isEmpty) {
       return const Scaffold(
+        appBar: null,
         body: SafeArea(
           child: _DetailMessageState(
             icon: Icons.local_pharmacy_outlined,
@@ -96,50 +92,30 @@ class PharmacyDetailPage extends ConsumerWidget {
 
     final pharmacyAsync = ref.watch(pharmacyByIdProvider(normalizedId));
 
-    return pharmacyAsync.when(
-      loading: () => Scaffold(
-        appBar: AppBar(),
-        body: const SafeArea(
-          child: Center(
+    return Scaffold(
+      appBar: AppBar(),
+      body: SafeArea(
+        child: pharmacyAsync.when(
+          loading: () => const Center(
             child: CircularProgressIndicator(),
           ),
-        ),
-      ),
-      error: (error, _) => Scaffold(
-        appBar: AppBar(),
-        body: SafeArea(
-          child: _DetailMessageState(
+          error: (error, _) => _DetailMessageState(
             icon: Icons.error_outline,
             title: 'Erreur de chargement',
             message: '$error',
           ),
-        ),
-      ),
-      data: (pharmacy) {
-        if (pharmacy == null) {
-          return const Scaffold(
-            body: SafeArea(
-              child: _DetailMessageState(
+          data: (pharmacy) {
+            if (pharmacy == null) {
+              return const _DetailMessageState(
                 icon: Icons.search_off_outlined,
                 title: 'Pharmacie introuvable',
                 message: 'Cette pharmacie n’existe pas ou n’est plus disponible.',
-              ),
-            ),
-          );
-        }
+              );
+            }
 
-        final hasCoordinates = pharmacy.hasCoordinates;
+            final hasCoordinates = pharmacy.hasCoordinates;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(
-              pharmacy.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          body: SafeArea(
-            child: ListView(
+            return ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 _HeaderCard(
@@ -228,10 +204,10 @@ class PharmacyDetailPage extends ConsumerWidget {
                   ],
                 ),
               ],
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -248,7 +224,7 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
@@ -260,12 +236,12 @@ class _HeaderCard extends StatelessWidget {
               height: 58,
               width: 58,
               decoration: BoxDecoration(
-                color: cs.primaryContainer,
+                color: colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Icon(
                 Icons.local_pharmacy_outlined,
-                color: cs.onPrimaryContainer,
+                color: colorScheme.onPrimaryContainer,
                 size: 28,
               ),
             ),
@@ -282,7 +258,7 @@ class _HeaderCard extends StatelessWidget {
                   Text(
                     pharmacy.locationLabel,
                     style: textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -326,7 +302,7 @@ class _InfoSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
@@ -336,7 +312,7 @@ class _InfoSectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 20, color: cs.primary),
+                Icon(icon, size: 20, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(title, style: textTheme.titleMedium),
               ],
@@ -362,7 +338,7 @@ class _Line extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -374,7 +350,7 @@ class _Line extends StatelessWidget {
             child: Text(
               label,
               style: textTheme.labelLarge?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -401,12 +377,12 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: cs.tertiaryContainer,
+        color: colorScheme.tertiaryContainer,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -415,13 +391,13 @@ class _Badge extends StatelessWidget {
           Icon(
             icon,
             size: 16,
-            color: cs.onTertiaryContainer,
+            color: colorScheme.onTertiaryContainer,
           ),
           const SizedBox(width: 6),
           Text(
             text,
             style: TextStyle(
-              color: cs.onTertiaryContainer,
+              color: colorScheme.onTertiaryContainer,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -445,7 +421,7 @@ class _DetailMessageState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
       child: Padding(
@@ -453,7 +429,7 @@ class _DetailMessageState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 42, color: cs.onSurfaceVariant),
+            Icon(icon, size: 42, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               title,
@@ -464,7 +440,7 @@ class _DetailMessageState extends StatelessWidget {
             Text(
               message,
               style: textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),

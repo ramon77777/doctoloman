@@ -1,7 +1,7 @@
 import '../domain/pharmacy.dart';
 
 class MockPharmaciesData {
-  static const List<Pharmacy> _items = [
+  static final List<Pharmacy> _items = [
     Pharmacy(
       id: 'ph_001',
       name: 'Pharmacie Sainte Marie',

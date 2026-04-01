@@ -33,9 +33,12 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(successMessage)),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(successMessage)),
+      );
   }
 
   Future<void> _confirmStatusChange(
@@ -68,8 +71,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
         ) ??
         false;
 
-    if (!confirmed) return;
-    if (!context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     await _updateStatus(
       context,
@@ -138,7 +140,6 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                 _ActionHintCard(appointment: appointment),
                 const SizedBox(height: 14),
                 _ActionAvailabilityCard(
-                  appointment: appointment,
                   canConfirm: canConfirm,
                   canDecline: canDecline,
                   canCancelConfirmed: canCancelConfirmed,
@@ -228,7 +229,6 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
                 _ProfessionalActionsSection(
-                  appointment: appointment,
                   canConfirm: canConfirm,
                   canDecline: canDecline,
                   canCancelConfirmed: canCancelConfirmed,
@@ -296,7 +296,7 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
@@ -308,12 +308,12 @@ class _HeaderCard extends StatelessWidget {
               height: 58,
               width: 58,
               decoration: BoxDecoration(
-                color: cs.primaryContainer,
+                color: colorScheme.primaryContainer,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Icon(
                 Icons.people_outline,
-                color: cs.onPrimaryContainer,
+                color: colorScheme.onPrimaryContainer,
                 size: 28,
               ),
             ),
@@ -330,7 +330,7 @@ class _HeaderCard extends StatelessWidget {
                   Text(
                     appointment.patientPhoneE164,
                     style: textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -368,7 +368,7 @@ class _ActionHintCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final title = AppointmentUiHelpers.professionalActionTitle(appointment);
     final message = AppointmentUiHelpers.professionalActionMessage(appointment);
 
@@ -378,7 +378,7 @@ class _ActionHintCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline, color: cs.primary),
+            Icon(Icons.info_outline, color: colorScheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -392,7 +392,7 @@ class _ActionHintCard extends StatelessWidget {
                   Text(
                     message,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                   ),
                 ],
@@ -407,20 +407,18 @@ class _ActionHintCard extends StatelessWidget {
 
 class _ActionAvailabilityCard extends StatelessWidget {
   const _ActionAvailabilityCard({
-    required this.appointment,
     required this.canConfirm,
     required this.canDecline,
     required this.canCancelConfirmed,
   });
 
-  final Appointment appointment;
   final bool canConfirm;
   final bool canDecline;
   final bool canCancelConfirmed;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     final actions = <String>[
       if (canConfirm) 'Confirmation disponible',
@@ -436,7 +434,7 @@ class _ActionAvailabilityCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.tune_outlined, color: cs.primary),
+            Icon(Icons.tune_outlined, color: colorScheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -453,7 +451,7 @@ class _ActionAvailabilityCard extends StatelessWidget {
                       child: Text(
                         '• $action',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
+                              color: colorScheme.onSurfaceVariant,
                             ),
                       ),
                     ),
@@ -470,7 +468,6 @@ class _ActionAvailabilityCard extends StatelessWidget {
 
 class _ProfessionalActionsSection extends StatelessWidget {
   const _ProfessionalActionsSection({
-    required this.appointment,
     required this.canConfirm,
     required this.canDecline,
     required this.canCancelConfirmed,
@@ -479,7 +476,6 @@ class _ProfessionalActionsSection extends StatelessWidget {
     required this.onCancelConfirmed,
   });
 
-  final Appointment appointment;
   final bool canConfirm;
   final bool canDecline;
   final bool canCancelConfirmed;

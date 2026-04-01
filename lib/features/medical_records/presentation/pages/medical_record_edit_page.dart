@@ -40,11 +40,29 @@ class _MedicalRecordEditPageState
   }
 
   String? _requiredValidator(String? value, String label) {
-    final normalized = (value ?? '').trim();
+    final normalized = _cleanText(value ?? '');
     if (normalized.isEmpty) {
       return '$label requis';
     }
     return null;
+  }
+
+  String _cleanText(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _cleanMultilineText(String value) {
+    return value
+        .trim()
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+  }
+
+  void _showMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _hydrate(MedicalRecord record) {
@@ -54,7 +72,11 @@ class _MedicalRecordEditPageState
     _sourceCtrl.text = record.sourceLabel;
     _summaryCtrl.text = record.summary;
     _category = record.category;
-    _recordDate = record.recordDate;
+    _recordDate = DateTime(
+      record.recordDate.year,
+      record.recordDate.month,
+      record.recordDate.day,
+    );
     _isSensitive = record.isSensitive;
     _initialized = true;
   }
@@ -81,14 +103,22 @@ class _MedicalRecordEditPageState
     FocusScope.of(context).unfocus();
     setState(() => _isSaving = true);
 
+    final cleanedTitle = _cleanText(_titleCtrl.text);
+    final cleanedSource = _cleanText(_sourceCtrl.text);
+    final cleanedSummary = _cleanMultilineText(_summaryCtrl.text);
+
     final updated = current.copyWith(
-      title: _titleCtrl.text.trim(),
+      title: cleanedTitle,
       category: _category,
-      recordDate: _recordDate,
-      sourceLabel: _sourceCtrl.text.trim(),
-      summary: _summaryCtrl.text.trim(),
+      recordDate: DateTime(
+        _recordDate.year,
+        _recordDate.month,
+        _recordDate.day,
+      ),
+      sourceLabel: cleanedSource,
+      summary: cleanedSummary,
       isSensitive: _isSensitive,
-      description: _summaryCtrl.text.trim(),
+      description: cleanedSummary,
     );
 
     try {
@@ -97,26 +127,40 @@ class _MedicalRecordEditPageState
       if (!mounted) return;
       setState(() => _isSaving = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Document médical mis à jour.')),
-      );
-
+      _showMessage('Document médical mis à jour.');
       Navigator.of(context).pop();
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSaving = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de mettre à jour le document.'),
-        ),
-      );
+      _showMessage('Impossible de mettre à jour le document.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final recordAsync = ref.watch(medicalRecordByIdProvider(widget.recordId));
+    final normalizedId = widget.recordId.trim();
+
+    if (normalizedId.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Modifier le document'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Document introuvable.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final recordAsync = ref.watch(medicalRecordByIdProvider(normalizedId));
 
     return Scaffold(
       appBar: AppBar(
@@ -159,6 +203,7 @@ class _MedicalRecordEditPageState
                   TextFormField(
                     controller: _titleCtrl,
                     textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: const InputDecoration(
                       labelText: 'Titre',
                       prefixIcon: Icon(Icons.description_outlined),
@@ -207,6 +252,7 @@ class _MedicalRecordEditPageState
                   TextFormField(
                     controller: _sourceCtrl,
                     textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: const InputDecoration(
                       labelText: 'Source',
                       prefixIcon: Icon(Icons.local_hospital_outlined),
@@ -227,6 +273,7 @@ class _MedicalRecordEditPageState
                     minLines: 4,
                     maxLines: 6,
                     textInputAction: TextInputAction.newline,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: const InputDecoration(
                       labelText: 'Résumé / description',
                       alignLabelWithHint: true,
@@ -256,8 +303,7 @@ class _MedicalRecordEditPageState
                           ? const SizedBox(
                               height: 18,
                               width: 18,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.save_outlined),
                       label: Text(

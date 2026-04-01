@@ -9,35 +9,46 @@ class AppointmentsLocalStorage {
 
   final SharedPreferences _prefs;
 
-  static const _appointmentsKey = 'appointments.items';
+  static const String _appointmentsKey = 'appointments.items';
 
   Future<List<Appointment>> readAll() async {
     final raw = _prefs.getString(_appointmentsKey);
     if (raw == null || raw.trim().isEmpty) {
-      return <Appointment>[];
+      return const <Appointment>[];
     }
 
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List) {
-        return <Appointment>[];
+        return const <Appointment>[];
       }
 
-      return decoded
-          .whereType<Map>()
-          .map(
-            (item) => Appointment.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
-          )
-          .toList();
+      final items = <Appointment>[];
+
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+
+        try {
+          final appointment = Appointment.fromMap(
+            Map<String, dynamic>.from(entry),
+          );
+          items.add(appointment);
+        } catch (_) {
+          // Ignore uniquement l'entrée invalide pour préserver le reste.
+        }
+      }
+
+      return List<Appointment>.unmodifiable(items);
     } catch (_) {
-      return <Appointment>[];
+      return const <Appointment>[];
     }
   }
 
   Future<void> saveAll(List<Appointment> appointments) async {
-    final payload = appointments.map((e) => e.toMap()).toList();
+    final payload = appointments
+        .map((appointment) => appointment.toMap())
+        .toList(growable: false);
+
     await _prefs.setString(_appointmentsKey, jsonEncode(payload));
   }
 

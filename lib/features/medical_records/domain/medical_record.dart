@@ -11,18 +11,25 @@ enum MedicalRecordCategory {
 
 @immutable
 class MedicalRecord {
-  const MedicalRecord({
-    required this.id,
-    required this.title,
+  MedicalRecord({
+    required String id,
+    required String title,
     required this.category,
-    required this.recordDate,
-    required this.createdAt,
-    required this.patientName,
-    required this.sourceLabel,
-    required this.summary,
+    required DateTime recordDate,
+    required DateTime createdAt,
+    required String patientName,
+    required String sourceLabel,
+    required String summary,
     required this.isSensitive,
-    this.description,
-  });
+    String? description,
+  })  : id = _cleanText(id),
+        title = _cleanText(title),
+        recordDate = _normalizeDate(recordDate),
+        createdAt = createdAt,
+        patientName = _cleanText(patientName),
+        sourceLabel = _cleanText(sourceLabel),
+        summary = _cleanMultilineText(summary),
+        description = _cleanNullableMultilineText(description);
 
   final String id;
   final String title;
@@ -37,6 +44,11 @@ class MedicalRecord {
 
   /// Champ enrichi pour la suite, sans casser l’existant.
   final String? description;
+
+  bool get hasDescription {
+    final desc = description?.trim();
+    return desc != null && desc.isNotEmpty;
+  }
 
   String get effectiveDescription {
     final desc = description?.trim();
@@ -89,20 +101,16 @@ class MedicalRecord {
 
   factory MedicalRecord.fromMap(Map<String, dynamic> map) {
     return MedicalRecord(
-      id: (map['id'] as String?)?.trim() ?? '',
-      title: (map['title'] as String?)?.trim() ?? '',
+      id: (map['id'] as String?) ?? '',
+      title: (map['title'] as String?) ?? '',
       category: _categoryFromString(map['category'] as String?),
-      recordDate: DateTime.parse(
-        (map['recordDate'] as String?) ?? DateTime.now().toIso8601String(),
-      ),
-      createdAt: DateTime.parse(
-        (map['createdAt'] as String?) ?? DateTime.now().toIso8601String(),
-      ),
-      patientName: (map['patientName'] as String?)?.trim() ?? '',
-      sourceLabel: (map['sourceLabel'] as String?)?.trim() ?? '',
-      summary: (map['summary'] as String?)?.trim() ?? '',
+      recordDate: _parseDateOrNow(map['recordDate']),
+      createdAt: _parseDateOrNow(map['createdAt']),
+      patientName: (map['patientName'] as String?) ?? '',
+      sourceLabel: (map['sourceLabel'] as String?) ?? '',
+      summary: (map['summary'] as String?) ?? '',
       isSensitive: (map['isSensitive'] as bool?) ?? true,
-      description: (map['description'] as String?)?.trim(),
+      description: map['description'] as String?,
     );
   }
 
@@ -121,5 +129,75 @@ class MedicalRecord {
       default:
         return MedicalRecordCategory.other;
     }
+  }
+
+  static DateTime _parseDateOrNow(Object? raw) {
+    if (raw is String) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+    return DateTime.now();
+  }
+
+  static DateTime _normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  static String _cleanText(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  static String _cleanMultilineText(String value) {
+    return value
+        .trim()
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+  }
+
+  static String? _cleanNullableMultilineText(String? value) {
+    if (value == null) return null;
+
+    final cleaned = _cleanMultilineText(value);
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is MedicalRecord &&
+        other.id == id &&
+        other.title == title &&
+        other.category == category &&
+        other.recordDate == recordDate &&
+        other.createdAt == createdAt &&
+        other.patientName == patientName &&
+        other.sourceLabel == sourceLabel &&
+        other.summary == summary &&
+        other.isSensitive == isSensitive &&
+        other.description == description;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      id,
+      title,
+      category,
+      recordDate,
+      createdAt,
+      patientName,
+      sourceLabel,
+      summary,
+      isSensitive,
+      description,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'MedicalRecord(id: $id, title: $title, category: $category)';
   }
 }

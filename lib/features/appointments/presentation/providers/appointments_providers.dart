@@ -24,7 +24,7 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final repo = ref.watch(appointmentsRepositoryProvider);
     final result = await repo.list(
-      const AppointmentListQuery(
+      AppointmentListQuery(
         page: 1,
         pageSize: 500,
       ),
@@ -332,7 +332,7 @@ class AppointmentsController {
 
   Future<void> clear() async {
     final result = await _repo.list(
-      const AppointmentListQuery(
+      AppointmentListQuery(
         page: 1,
         pageSize: 500,
       ),

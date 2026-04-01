@@ -21,49 +21,53 @@ final patientProfileRepositoryProvider = Provider<PatientProfileRepository>(
   name: 'patientProfileRepositoryProvider',
 );
 
-final patientProfileProvider = FutureProvider<PatientProfile?>((ref) async {
-  final repo = ref.watch(patientProfileRepositoryProvider);
-  final authState = ref.watch(authControllerProvider);
-  final authUser = authState.user;
+final patientProfileProvider = FutureProvider<PatientProfile?>(
+  (ref) async {
+    final repo = ref.watch(patientProfileRepositoryProvider);
+    final authState = ref.watch(authControllerProvider);
+    final authUser = authState.user;
 
-  final stored = await repo.get();
+    final stored = await repo.get();
 
-  if (authUser == null) {
-    if (stored != null) {
-      await repo.clear();
+    if (authUser == null) {
+      if (stored != null) {
+        await repo.clear();
+      }
+      return null;
     }
-    return null;
-  }
 
-  if (stored == null || stored.id != authUser.id) {
-    final profile = PatientProfile(
-      id: authUser.id,
-      name: authUser.name,
-      phone: authUser.phone,
+    if (stored == null || stored.id != authUser.id) {
+      final createdProfile = PatientProfile(
+        id: authUser.id,
+        name: authUser.name,
+        phone: authUser.phone,
+      );
+      await repo.save(createdProfile);
+      return createdProfile;
+    }
+
+    final syncedProfile = _syncProfileWithAuth(
+      storedProfile: stored,
+      authUser: authUser,
     );
-    await repo.save(profile);
-    return profile;
-  }
 
-  final needsSyncFromAuth =
-      stored.name != authUser.name || stored.phone != authUser.phone;
+    if (syncedProfile != stored) {
+      await repo.save(syncedProfile);
+      return syncedProfile;
+    }
 
-  if (needsSyncFromAuth) {
-    final synced = stored.copyWith(
-      name: authUser.name,
-      phone: authUser.phone,
-    );
-    await repo.save(synced);
-    return synced;
-  }
-
-  return stored;
-}, name: 'patientProfileProvider');
+    return stored;
+  },
+  name: 'patientProfileProvider',
+);
 
 final patientProfileControllerProvider = Provider<PatientProfileController>(
   (ref) {
     final repo = ref.watch(patientProfileRepositoryProvider);
-    return PatientProfileController(ref: ref, repo: repo);
+    return PatientProfileController(
+      ref: ref,
+      repo: repo,
+    );
   },
   name: 'patientProfileControllerProvider',
 );
@@ -80,11 +84,35 @@ class PatientProfileController {
 
   Future<void> save(PatientProfile profile) async {
     await _repo.save(profile);
-    _ref.invalidate(patientProfileProvider);
+    _invalidateProfile();
   }
 
   Future<void> clear() async {
     await _repo.clear();
+    _invalidateProfile();
+  }
+
+  void _invalidateProfile() {
     _ref.invalidate(patientProfileProvider);
   }
+}
+
+PatientProfile _syncProfileWithAuth({
+  required PatientProfile storedProfile,
+  required dynamic authUser,
+}) {
+  final nextName = authUser.name;
+  final nextPhone = authUser.phone;
+
+  final needsNameSync = storedProfile.name != nextName;
+  final needsPhoneSync = storedProfile.phone != nextPhone;
+
+  if (!needsNameSync && !needsPhoneSync) {
+    return storedProfile;
+  }
+
+  return storedProfile.copyWith(
+    name: nextName,
+    phone: nextPhone,
+  );
 }
