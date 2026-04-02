@@ -41,7 +41,6 @@ class ProfilePage extends ConsumerWidget {
       if (!confirm) return;
 
       await ref.read(authControllerProvider.notifier).logout();
-      await ref.read(patientProfileControllerProvider).clear();
 
       if (!context.mounted) return;
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-
 import '../../../../app/router/app_routes.dart';
 import '../../../../app/router/route_args.dart';
 import '../../../../app/theme/app_colors.dart';
@@ -9,6 +8,7 @@ import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../medical_records/presentation/providers/medical_records_providers.dart';
+import '../../../profile/presentation/providers/patient_profile_providers.dart';
 
 class HomeDashboardPage extends ConsumerWidget {
   const HomeDashboardPage({super.key});
@@ -16,12 +16,20 @@ class HomeDashboardPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
+    final profileAsync = ref.watch(patientProfileProvider);
     final appointmentsAsync = ref.watch(appointmentsListProvider);
     final recordsAsync = ref.watch(medicalRecordsListProvider);
 
-    final user = authState.user;
     final textTheme = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+
+    final profile = profileAsync.valueOrNull;
+
+    final displayName = profile?.name.trim().isNotEmpty == true
+        ? profile!.name.trim()
+        : (authState.user?.name.trim().isNotEmpty == true
+            ? authState.user!.name.trim()
+            : 'Utilisateur');
 
     return Scaffold(
       appBar: AppBar(
@@ -39,16 +47,21 @@ class HomeDashboardPage extends ConsumerWidget {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
+            ref.invalidate(patientProfileProvider);
             ref.invalidate(appointmentsListProvider);
             ref.invalidate(medicalRecordsListProvider);
-            await ref.read(appointmentsListProvider.future);
-            await ref.read(medicalRecordsListProvider.future);
+
+            await Future.wait([
+              ref.read(patientProfileProvider.future),
+              ref.read(appointmentsListProvider.future),
+              ref.read(medicalRecordsListProvider.future),
+            ]);
           },
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
               _DashboardHeader(
-                title: 'Bonjour ${user?.name ?? 'Utilisateur'}',
+                title: 'Bonjour $displayName',
                 subtitle:
                     'Gérez vos demandes, vos rendez-vous et vos accès santé simplement.',
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/utils/string_normalizers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/in_memory_patient_profile_repository.dart';
 import '../../data/patient_profile_local_storage.dart';
@@ -33,20 +34,30 @@ final patientProfileProvider = FutureProvider<PatientProfile?>(
       return null;
     }
 
+    final authPhone = _normalizePhoneKey(authUser.phone);
+
     if (stored == null) {
       final createdProfile = PatientProfile(
         id: authUser.id,
-        name: authUser.name,
+        name: _effectiveAuthName(authUser.name),
         phone: authUser.phone,
       );
       await repo.save(createdProfile);
       return createdProfile;
     }
 
-    if (stored.id != authUser.id) {
+    final storedPhone = _normalizePhoneKey(stored.phone);
+
+    final isSameUserById = stored.id.trim().isNotEmpty &&
+        stored.id.trim() == authUser.id.trim();
+
+    final isSameUserByPhone =
+        storedPhone.isNotEmpty && storedPhone == authPhone;
+
+    if (!isSameUserById && !isSameUserByPhone) {
       final createdProfile = PatientProfile(
         id: authUser.id,
-        name: authUser.name,
+        name: _effectiveAuthName(authUser.name),
         phone: authUser.phone,
       );
       await repo.save(createdProfile);
@@ -108,17 +119,28 @@ PatientProfile _syncProfileWithAuth({
   required PatientProfile storedProfile,
   required dynamic authUser,
 }) {
-  final nextName = authUser.name;
+  final nextId = authUser.id;
   final nextPhone = authUser.phone;
 
-  final needsNameSync = storedProfile.name != nextName;
-  final needsPhoneSync = storedProfile.phone != nextPhone;
+  final storedName = storedProfile.name.trim();
+  final authName = (authUser.name ?? '').toString().trim();
 
-  if (!needsNameSync && !needsPhoneSync) {
+  final shouldKeepStoredName =
+      _isPlaceholderName(authName) && storedName.isNotEmpty;
+
+  final nextName = shouldKeepStoredName ? storedName : _effectiveAuthName(authName);
+
+  final needsIdSync = storedProfile.id != nextId;
+  final needsNameSync = storedProfile.name != nextName;
+  final needsPhoneSync =
+      _normalizePhoneKey(storedProfile.phone) != _normalizePhoneKey(nextPhone);
+
+  if (!needsIdSync && !needsNameSync && !needsPhoneSync) {
     return storedProfile;
   }
 
   return storedProfile.copyWith(
+    id: nextId,
     name: nextName,
     phone: nextPhone,
   );
@@ -138,4 +160,23 @@ bool _samePatientProfile(PatientProfile a, PatientProfile b) {
       a.medicalNotes == b.medicalNotes &&
       a.emergencyContactName == b.emergencyContactName &&
       a.emergencyContactPhone == b.emergencyContactPhone;
+}
+
+String _normalizePhoneKey(String value) {
+  return StringNormalizers.normalizePhoneCi(value).replaceAll(RegExp(r'\D'), '');
+}
+
+bool _isPlaceholderName(String value) {
+  final normalized = value.trim().toLowerCase();
+  return normalized.isEmpty ||
+      normalized == 'utilisateur' ||
+      normalized == 'nouveau patient';
+}
+
+String _effectiveAuthName(String value) {
+  final normalized = value.trim();
+  if (_isPlaceholderName(normalized)) {
+    return 'Utilisateur';
+  }
+  return normalized;
 }

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/utils/string_normalizers.dart';
+import '../../../profile/presentation/providers/patient_profile_providers.dart';
 import '../providers/auth_providers.dart';
 
 class LoginPhonePage extends ConsumerStatefulWidget {
@@ -30,26 +32,12 @@ class _LoginPhonePageState extends ConsumerState<LoginPhonePage> {
   }
 
   String _normalizePhone(String input) {
-    final raw = input.trim();
-    var cleaned = raw.replaceAll(RegExp(r'[^0-9+]'), '');
-
-    if (!cleaned.startsWith('+')) {
-      cleaned = '+$cleaned';
-    }
-
-    if (cleaned.startsWith('+') && cleaned.length == 11) {
-      cleaned = '+225${cleaned.substring(1)}';
-    } else if (cleaned.startsWith('+0') && cleaned.length == 11) {
-      cleaned = '+225${cleaned.substring(2)}';
-    }
-
-    return cleaned;
+    return StringNormalizers.normalizePhoneCi(input);
   }
 
-  String? _validatePhone(String? v) {
-    final phone = _normalizePhone(v ?? '');
-    final ok = RegExp(r'^\+225\d{10}$').hasMatch(phone);
-    if (!ok) {
+  String? _validatePhone(String? value) {
+    final phone = _normalizePhone(value ?? '');
+    if (!StringNormalizers.isValidCiPhone(phone)) {
       return 'Numéro invalide. Exemple : +2250102030405';
     }
     return null;
@@ -195,27 +183,61 @@ class _OtpVerifyPageState extends ConsumerState<OtpVerifyPage> {
     _timer?.cancel();
     _secondsLeft = _cooldownSeconds;
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
+
       if (_secondsLeft <= 0) {
-        t.cancel();
+        timer.cancel();
         return;
       }
+
       setState(() => _secondsLeft -= 1);
     });
 
     setState(() {});
   }
 
-  String? _validateOtp(String? v) {
-    final otp = (v ?? '').trim();
+  String? _validateOtp(String? value) {
+    final otp = (value ?? '').trim();
     if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
       return '6 chiffres requis';
     }
     return null;
   }
 
+  String _normalizePhoneKey(String value) {
+    return StringNormalizers.normalizePhoneCi(value)
+        .replaceAll(RegExp(r'\D'), '');
+  }
+
   String _buildDisplayName() {
+    final currentUser = ref.read(authControllerProvider).user;
+    final currentName = currentUser?.name.trim() ?? '';
+
+    final existingProfile = ref.read(patientProfileProvider).valueOrNull;
+    final existingProfilePhone = existingProfile?.phone.trim() ?? '';
+    final existingProfileName = existingProfile?.name.trim() ?? '';
+
+    final currentPhoneKey = _normalizePhoneKey(widget.phone);
+    final existingPhoneKey = _normalizePhoneKey(existingProfilePhone);
+
+    final sameProfilePhone = currentPhoneKey.isNotEmpty &&
+        existingPhoneKey.isNotEmpty &&
+        currentPhoneKey == existingPhoneKey;
+
+    if (sameProfilePhone &&
+        existingProfileName.isNotEmpty &&
+        existingProfileName.toLowerCase() != 'utilisateur' &&
+        existingProfileName.toLowerCase() != 'nouveau patient') {
+      return existingProfileName;
+    }
+
+    if (currentName.isNotEmpty &&
+        currentName.toLowerCase() != 'utilisateur' &&
+        currentName.toLowerCase() != 'nouveau patient') {
+      return currentName;
+    }
+
     return widget.isSignup ? 'Nouveau patient' : 'Utilisateur';
   }
 

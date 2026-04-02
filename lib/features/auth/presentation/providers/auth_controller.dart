@@ -31,7 +31,7 @@ class AuthController extends StateNotifier<AuthState> {
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
     final user = AppUser(
-      id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+      id: _buildStableUserId(normalizedPhone),
       name: normalizedName.isEmpty ? 'Utilisateur' : normalizedName,
       phone: normalizedPhone,
     );
@@ -53,6 +53,7 @@ class AuthController extends StateNotifier<AuthState> {
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
     final updatedUser = currentUser.copyWith(
+      id: _buildStableUserId(normalizedPhone),
       name: normalizedName.isEmpty ? currentUser.name : normalizedName,
       phone: normalizedPhone,
     );
@@ -74,7 +75,7 @@ class AuthController extends StateNotifier<AuthState> {
 
     final user = _repository.currentUser ??
         const AppUser(
-          id: 'local-user',
+          id: 'local-user-2250000000000',
           name: 'Utilisateur',
           phone: '+2250000000000',
         );
@@ -86,5 +87,13 @@ class AuthController extends StateNotifier<AuthState> {
     state = AuthState.loading(user: state.user);
     await _repository.logout();
     state = AuthState.unauthenticated();
+  }
+
+  String _buildStableUserId(String normalizedPhone) {
+    final digitsOnly = normalizedPhone.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.isEmpty) {
+      return 'local-user';
+    }
+    return 'local-user-$digitsOnly';
   }
 }
