@@ -14,8 +14,8 @@ class HomePublicPage extends ConsumerStatefulWidget {
 }
 
 class _HomePublicPageState extends ConsumerState<HomePublicPage> {
-  final _whatCtrl = TextEditingController();
-  final _whereCtrl = TextEditingController();
+  final TextEditingController _whatCtrl = TextEditingController();
+  final TextEditingController _whereCtrl = TextEditingController();
 
   bool _canSearch = false;
   bool _isNavigating = false;
@@ -37,9 +37,13 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     super.dispose();
   }
 
-  void _unfocus() => FocusManager.instance.primaryFocus?.unfocus();
+  void _unfocus() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
 
   void _showMessage(String message) {
+    if (!mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     messenger
       ..hideCurrentSnackBar()
@@ -54,7 +58,9 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     final next = what.isNotEmpty || where.isNotEmpty;
 
     if (next != _canSearch) {
-      setState(() => _canSearch = next);
+      setState(() {
+        _canSearch = next;
+      });
     }
   }
 
@@ -62,13 +68,17 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     if (_isNavigating) return;
 
     _unfocus();
-    setState(() => _isNavigating = true);
+    setState(() {
+      _isNavigating = true;
+    });
 
     try {
       await action();
     } finally {
       if (mounted) {
-        setState(() => _isNavigating = false);
+        setState(() {
+          _isNavigating = false;
+        });
       }
     }
   }
@@ -128,8 +138,6 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
 
   Future<void> _onLogout() async {
     await ref.read(authControllerProvider.notifier).logout();
-
-    if (!mounted) return;
     _showMessage('Vous êtes déconnecté.');
   }
 
@@ -140,9 +148,9 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) {
-        final textTheme = Theme.of(context).textTheme;
-        final colorScheme = Theme.of(context).colorScheme;
+      builder: (sheetContext) {
+        final textTheme = Theme.of(sheetContext).textTheme;
+        final colorScheme = Theme.of(sheetContext).colorScheme;
 
         return SafeArea(
           child: Padding(
@@ -183,7 +191,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                   height: 48,
                   child: FilledButton.icon(
                     onPressed: () {
-                      Navigator.of(context).pop();
+                      Navigator.of(sheetContext).pop();
                       _openProfile();
                     },
                     icon: const Icon(Icons.person_outline),
@@ -196,7 +204,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                   height: 48,
                   child: FilledButton.icon(
                     onPressed: () {
-                      Navigator.of(context).pop();
+                      Navigator.of(sheetContext).pop();
                       _openAppointments();
                     },
                     icon: const Icon(Icons.event_note_outlined),
@@ -209,7 +217,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                   height: 48,
                   child: OutlinedButton.icon(
                     onPressed: () async {
-                      Navigator.of(context).pop();
+                      Navigator.of(sheetContext).pop();
                       await _onLogout();
                     },
                     icon: const Icon(Icons.logout),
@@ -273,11 +281,17 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                     PopupMenuButton<_AuthAction>(
                       tooltip: 'Compte',
                       onSelected: (value) {
-                        if (value == _AuthAction.login) _onLogin();
-                        if (value == _AuthAction.signup) _onSignup();
+                        switch (value) {
+                          case _AuthAction.login:
+                            _onLogin();
+                            break;
+                          case _AuthAction.signup:
+                            _onSignup();
+                            break;
+                        }
                       },
                       itemBuilder: (context) => const [
-                        PopupMenuItem(
+                        PopupMenuItem<_AuthAction>(
                           value: _AuthAction.login,
                           child: ListTile(
                             dense: true,
@@ -285,7 +299,7 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                             title: Text('Connexion'),
                           ),
                         ),
-                        PopupMenuItem(
+                        PopupMenuItem<_AuthAction>(
                           value: _AuthAction.signup,
                           child: ListTile(
                             dense: true,

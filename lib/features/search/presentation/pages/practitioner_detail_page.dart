@@ -46,7 +46,10 @@ class _PractitionerDetailPageState
   }
 
   DateTime? _slotToDateTime(DateTime day, String slot) {
-    final parts = slot.split(':');
+    final start = _extractSlotStart(slot);
+    if (start == null) return null;
+
+    final parts = start.split(':');
     if (parts.length != 2) return null;
 
     final hour = int.tryParse(parts[0]);
@@ -56,6 +59,20 @@ class _PractitionerDetailPageState
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
 
     return DateTime(day.year, day.month, day.day, hour, minute);
+  }
+
+  String? _extractSlotStart(String slot) {
+    final normalized = slot.trim();
+    if (normalized.isEmpty) return null;
+
+    if (normalized.contains(' - ')) {
+      final parts = normalized.split(' - ');
+      if (parts.isEmpty) return null;
+      final start = parts.first.trim();
+      return start.isEmpty ? null : start;
+    }
+
+    return normalized;
   }
 
   bool _isSlotStillBookable(DateTime day, String slot) {
@@ -78,9 +95,14 @@ class _PractitionerDetailPageState
     required Set<String> takenSlots,
     required DateTime selectedDay,
   }) {
+    final normalizedTakenSlots = takenSlots.map((slot) => slot.trim()).toSet();
+
     return rawSlots.where((slot) {
-      if (takenSlots.contains(slot)) return false;
-      return _isSlotStillBookable(selectedDay, slot);
+      final normalizedSlot = slot.trim();
+      if (normalizedTakenSlots.contains(normalizedSlot)) {
+        return false;
+      }
+      return _isSlotStillBookable(selectedDay, normalizedSlot);
     }).toList();
   }
 
@@ -842,10 +864,10 @@ class _SlotsGrid extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       itemCount: slots.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
+        crossAxisCount: 2,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
-        childAspectRatio: 2.3,
+        childAspectRatio: 2.8,
       ),
       itemBuilder: (context, index) {
         final slot = slots[index];
@@ -856,6 +878,7 @@ class _SlotsGrid extends StatelessWidget {
           onTap: () => onSelect(slot),
           child: Container(
             alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: isSelected ? AppColors.primary : AppColors.card,
               borderRadius: BorderRadius.circular(14),
@@ -863,6 +886,9 @@ class _SlotsGrid extends StatelessWidget {
             ),
             child: Text(
               slot,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: isSelected ? Colors.white : null,

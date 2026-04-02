@@ -30,13 +30,20 @@ final patientProfileProvider = FutureProvider<PatientProfile?>(
     final stored = await repo.get();
 
     if (authUser == null) {
-      if (stored != null) {
-        await repo.clear();
-      }
       return null;
     }
 
-    if (stored == null || stored.id != authUser.id) {
+    if (stored == null) {
+      final createdProfile = PatientProfile(
+        id: authUser.id,
+        name: authUser.name,
+        phone: authUser.phone,
+      );
+      await repo.save(createdProfile);
+      return createdProfile;
+    }
+
+    if (stored.id != authUser.id) {
       final createdProfile = PatientProfile(
         id: authUser.id,
         name: authUser.name,
@@ -51,7 +58,7 @@ final patientProfileProvider = FutureProvider<PatientProfile?>(
       authUser: authUser,
     );
 
-    if (syncedProfile != stored) {
+    if (!_samePatientProfile(stored, syncedProfile)) {
       await repo.save(syncedProfile);
       return syncedProfile;
     }
@@ -115,4 +122,20 @@ PatientProfile _syncProfileWithAuth({
     name: nextName,
     phone: nextPhone,
   );
+}
+
+bool _samePatientProfile(PatientProfile a, PatientProfile b) {
+  return a.id == b.id &&
+      a.name == b.name &&
+      a.phone == b.phone &&
+      a.city == b.city &&
+      a.district == b.district &&
+      a.address == b.address &&
+      a.birthDate == b.birthDate &&
+      a.gender == b.gender &&
+      a.bloodGroup == b.bloodGroup &&
+      a.allergies == b.allergies &&
+      a.medicalNotes == b.medicalNotes &&
+      a.emergencyContactName == b.emergencyContactName &&
+      a.emergencyContactPhone == b.emergencyContactPhone;
 }

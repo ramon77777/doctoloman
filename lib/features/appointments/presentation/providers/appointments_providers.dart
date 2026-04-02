@@ -20,7 +20,9 @@ final appointmentsRepositoryProvider = Provider<AppointmentsRepository>(
   name: 'appointmentsRepositoryProvider',
 );
 
-final appointmentsListProvider = FutureProvider<List<Appointment>>(
+/// Liste brute de tous les rendez-vous présents dans le stockage local.
+/// Cette source sert notamment au calcul des créneaux déjà pris.
+final allAppointmentsProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final repo = ref.watch(appointmentsRepositoryProvider);
     final result = await repo.list(
@@ -29,15 +31,59 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
         pageSize: 500,
       ),
     );
-    return result.items;
+
+    return List<Appointment>.unmodifiable(result.items);
+  },
+  name: 'allAppointmentsProvider',
+);
+
+/// Liste des rendez-vous visibles pour le patient connecté.
+/// On filtre par téléphone patient pour éviter de mélanger les rendez-vous
+/// de plusieurs sessions/utilisateurs sur un même stockage local mock.
+final appointmentsListProvider = FutureProvider<List<Appointment>>(
+  (ref) async {
+    final authState = ref.watch(authControllerProvider);
+    final authUser = authState.user;
+    final allItems = await ref.watch(allAppointmentsProvider.future);
+
+    if (authUser == null) {
+      return const <Appointment>[];
+    }
+
+    final normalizedPhone = _normalizePhoneKey(authUser.phone);
+    if (normalizedPhone.isEmpty) {
+      return const <Appointment>[];
+    }
+
+    final filtered = allItems.where((appointment) {
+      return _normalizePhoneKey(appointment.patientPhoneE164) == normalizedPhone;
+    }).toList()
+      ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    return List<Appointment>.unmodifiable(filtered);
   },
   name: 'appointmentsListProvider',
 );
 
 final appointmentByIdProvider =
     FutureProvider.family<Appointment?, String>((ref, id) async {
+  final normalizedId = _normalizeKey(id);
+  if (normalizedId.isEmpty) return null;
+
+  final authState = ref.watch(authControllerProvider);
+  final authUser = authState.user;
+  if (authUser == null) return null;
+
   final repo = ref.watch(appointmentsRepositoryProvider);
-  return repo.getById(id);
+  final appointment = await repo.getById(normalizedId);
+  if (appointment == null) return null;
+
+  final normalizedPhone = _normalizePhoneKey(authUser.phone);
+  if (_normalizePhoneKey(appointment.patientPhoneE164) != normalizedPhone) {
+    return null;
+  }
+
+  return appointment;
 }, name: 'appointmentByIdProvider');
 
 final appointmentsControllerProvider = Provider<AppointmentsController>(
@@ -144,7 +190,8 @@ final appointmentsStatsProvider = FutureProvider<AppointmentsStats>(
     return AppointmentsStats(
       totalCount: items.length,
       pendingCount: items.where(_isPendingAppointment).length,
-      upcomingConfirmedCount: items.where(_isUpcomingConfirmedAppointment).length,
+      upcomingConfirmedCount:
+          items.where(_isUpcomingConfirmedAppointment).length,
       confirmedCount: items.where(_isConfirmedAppointment).length,
       historyCount: items.where(_isHistoryAppointment).length,
       cancelledCount: items.where(_isCancelledAppointment).length,
@@ -184,13 +231,15 @@ final filteredAppointmentsProvider = FutureProvider<List<Appointment>>(
       ),
     ).toList();
 
-    filtered.sort((a, b) => _compareAppointmentsForViewFilter(
-          a: a,
-          b: b,
-          filter: filters.filter,
-        ));
+    filtered.sort(
+      (a, b) => _compareAppointmentsForViewFilter(
+        a: a,
+        b: b,
+        filter: filters.filter,
+      ),
+    );
 
-    return filtered;
+    return List<Appointment>.unmodifiable(filtered);
   },
   name: 'filteredAppointmentsProvider',
 );
@@ -212,34 +261,43 @@ class TakenSlotsQuery {
     if (identical(this, other)) return true;
 
     return other is TakenSlotsQuery &&
-        other.practitionerId == practitionerId &&
+        _normalizeKey(other.practitionerId) == _normalizeKey(practitionerId) &&
         other.normalizedDay == normalizedDay;
   }
 
   @override
-  int get hashCode => Object.hash(practitionerId, normalizedDay);
+  int get hashCode => Object.hash(
+        _normalizeKey(practitionerId),
+        normalizedDay,
+      );
 }
 
+/// Calcule les créneaux déjà pris pour un praticien donné et une journée donnée.
+/// Ici on se base sur la source brute de rendez-vous, pas sur la liste filtrée
+/// du patient connecté, sinon la disponibilité deviendrait incohérente.
 final takenSlotsForPractitionerDayProvider =
     FutureProvider.family<Set<String>, TakenSlotsQuery>((ref, query) async {
-  final items = await ref.watch(appointmentsListProvider.future);
+  final items = await ref.watch(allAppointmentsProvider.future);
+  final normalizedPractitionerId = _normalizeKey(query.practitionerId);
   final targetDay = query.normalizedDay;
 
-  return items
-      .where((appointment) {
-        if (appointment.practitionerId != query.practitionerId) return false;
-        if (appointment.isCancelledLike) return false;
+  final takenSlots = items.where((appointment) {
+    if (_normalizeKey(appointment.practitionerId) != normalizedPractitionerId) {
+      return false;
+    }
 
-        final appointmentDay = DateTime(
-          appointment.day.year,
-          appointment.day.month,
-          appointment.day.day,
-        );
+    if (!_isSlotBlockingAppointment(appointment)) {
+      return false;
+    }
 
-        return appointmentDay == targetDay;
-      })
-      .map((appointment) => appointment.slot)
-      .toSet();
+    return _isSameCalendarDay(appointment.day, targetDay);
+  }).map((appointment) {
+    return _normalizeSlot(appointment.slot);
+  }).where((slot) {
+    return slot.isNotEmpty;
+  }).toSet();
+
+  return Set<String>.unmodifiable(takenSlots);
 }, name: 'takenSlotsForPractitionerDayProvider');
 
 class AppointmentsController {
@@ -369,6 +427,7 @@ class AppointmentsController {
   }
 
   void _invalidateCollections() {
+    _ref.invalidate(allAppointmentsProvider);
     _ref.invalidate(appointmentsListProvider);
     _ref.invalidate(appointmentsStatsProvider);
     _ref.invalidate(nextUpcomingAppointmentProvider);
@@ -464,6 +523,29 @@ bool _isHistoryAppointment(Appointment appointment) {
 bool _isCancelledAppointment(Appointment appointment) {
   return appointment.status == AppointmentStatus.cancelledByPatient ||
       appointment.status == AppointmentStatus.declinedByProfessional;
+}
+
+bool _isSlotBlockingAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.pending ||
+      appointment.status == AppointmentStatus.confirmed;
+}
+
+bool _isSameCalendarDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+String _normalizeSlot(String value) {
+  return value.trim();
+}
+
+String _normalizeKey(String value) {
+  return value.trim();
+}
+
+String _normalizePhoneKey(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  return trimmed.replaceAll(RegExp(r'\D'), '');
 }
 
 String _normalizeSearch(String value) {

@@ -33,6 +33,7 @@ SlotGenerationResult buildSlotsForDay({
   }
 
   final effectiveNow = now ?? DateTime.now();
+
   final normalizedSelectedDay = DateTime(
     selectedDay.year,
     selectedDay.month,
@@ -78,9 +79,14 @@ SlotGenerationResult buildSlotsForDay({
         cursor % 60,
       );
 
-      final isTooSoon = !slotStart.isBefore(earliestAllowed);
+      final slotEndMinutes = cursor + consultationDurationMinutes;
+
+      final isTooSoon = slotStart.isBefore(earliestAllowed);
+
       if (!isTooSoon) {
-        slots.add(_formatMinutes(cursor));
+        slots.add(
+          '${_formatMinutes(cursor)} - ${_formatMinutes(slotEndMinutes)}',
+        );
       }
 
       cursor += intervalMinutes;
@@ -92,12 +98,13 @@ SlotGenerationResult buildSlotsForDay({
 
   return SlotGenerationResult(
     isOpen: true,
-    slots: slots,
+    slots: List<String>.unmodifiable(slots),
   );
 }
 
 int? _toMinutes(String hhmm) {
-  final parts = hhmm.split(':');
+  final value = hhmm.trim();
+  final parts = value.split(':');
   if (parts.length != 2) return null;
 
   final hh = int.tryParse(parts[0]);
