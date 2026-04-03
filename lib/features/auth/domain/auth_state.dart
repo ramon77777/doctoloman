@@ -10,6 +10,8 @@ class AuthState {
   });
 
   bool get isAuthenticated => user != null;
+  bool get isPatient => user?.isPatient ?? false;
+  bool get isProfessional => user?.isProfessional ?? false;
 
   AuthState copyWith({
     AppUser? user,

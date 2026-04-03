@@ -1,23 +1,35 @@
+enum AppUserRole {
+  patient,
+  professional,
+}
+
 class AppUser {
   final String id;
   final String name;
   final String phone;
+  final AppUserRole role;
 
   const AppUser({
     required this.id,
     required this.name,
     required this.phone,
+    required this.role,
   });
+
+  bool get isPatient => role == AppUserRole.patient;
+  bool get isProfessional => role == AppUserRole.professional;
 
   AppUser copyWith({
     String? id,
     String? name,
     String? phone,
+    AppUserRole? role,
   }) {
     return AppUser(
       id: id ?? this.id,
       name: name ?? this.name,
       phone: phone ?? this.phone,
+      role: role ?? this.role,
     );
   }
 
@@ -26,6 +38,7 @@ class AppUser {
       'id': id,
       'name': name,
       'phone': phone,
+      'role': role.name,
     };
   }
 
@@ -34,12 +47,23 @@ class AppUser {
       id: (map['id'] as String?)?.trim() ?? '',
       name: (map['name'] as String?)?.trim() ?? '',
       phone: (map['phone'] as String?)?.trim() ?? '',
+      role: _roleFromString(map['role'] as String?),
     );
+  }
+
+  static AppUserRole _roleFromString(String? raw) {
+    switch (raw) {
+      case 'professional':
+        return AppUserRole.professional;
+      case 'patient':
+      default:
+        return AppUserRole.patient;
+    }
   }
 
   @override
   String toString() {
-    return 'AppUser(id: $id, name: $name, phone: $phone)';
+    return 'AppUser(id: $id, name: $name, phone: $phone, role: $role)';
   }
 
   @override
@@ -49,9 +73,11 @@ class AppUser {
     return other is AppUser &&
         other.id == id &&
         other.name == name &&
-        other.phone == phone;
+        other.phone == phone &&
+        other.role == role;
   }
 
   @override
-  int get hashCode => id.hashCode ^ name.hashCode ^ phone.hashCode;
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ phone.hashCode ^ role.hashCode;
 }

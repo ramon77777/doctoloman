@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/models/app_user.dart';
 import '../../../../core/utils/string_normalizers.dart';
 import '../../../profile/presentation/providers/patient_profile_providers.dart';
 import '../providers/auth_providers.dart';
@@ -23,7 +24,9 @@ class LoginPhonePage extends ConsumerStatefulWidget {
 class _LoginPhonePageState extends ConsumerState<LoginPhonePage> {
   final _formKey = GlobalKey<FormState>();
   final _phoneCtrl = TextEditingController(text: '+225 ');
+
   bool _isLoading = false;
+  AppUserRole _selectedRole = AppUserRole.patient;
 
   @override
   void dispose() {
@@ -63,6 +66,7 @@ class _LoginPhonePageState extends ConsumerState<LoginPhonePage> {
           isSignup: widget.isSignup,
           phone: phone,
           verificationId: 'mock_verification_id',
+          role: _selectedRole,
         ),
       ),
     );
@@ -96,6 +100,32 @@ class _LoginPhonePageState extends ConsumerState<LoginPhonePage> {
             ),
             const SizedBox(height: 8),
             const Text('Nous vous enverrons un code par SMS.'),
+            const SizedBox(height: 16),
+            const Text(
+              'Je suis :',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            SegmentedButton<AppUserRole>(
+              segments: const [
+                ButtonSegment<AppUserRole>(
+                  value: AppUserRole.patient,
+                  label: Text('Patient'),
+                  icon: Icon(Icons.person_outline),
+                ),
+                ButtonSegment<AppUserRole>(
+                  value: AppUserRole.professional,
+                  label: Text('Professionnel'),
+                  icon: Icon(Icons.badge_outlined),
+                ),
+              ],
+              selected: {_selectedRole},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _selectedRole = selection.first;
+                });
+              },
+            ),
             const SizedBox(height: 16),
             Form(
               key: _formKey,
@@ -147,11 +177,13 @@ class OtpVerifyPage extends ConsumerStatefulWidget {
     required this.isSignup,
     required this.phone,
     required this.verificationId,
+    required this.role,
   });
 
   final bool isSignup;
   final String phone;
   final String verificationId;
+  final AppUserRole role;
 
   @override
   ConsumerState<OtpVerifyPage> createState() => _OtpVerifyPageState();
@@ -160,6 +192,7 @@ class OtpVerifyPage extends ConsumerStatefulWidget {
 class _OtpVerifyPageState extends ConsumerState<OtpVerifyPage> {
   final _formKey = GlobalKey<FormState>();
   final _otpCtrl = TextEditingController();
+
   bool _isLoading = false;
 
   static const int _cooldownSeconds = 30;
@@ -238,7 +271,13 @@ class _OtpVerifyPageState extends ConsumerState<OtpVerifyPage> {
       return currentName;
     }
 
-    return widget.isSignup ? 'Nouveau patient' : 'Utilisateur';
+    if (widget.isSignup) {
+      return widget.role == AppUserRole.professional
+          ? 'Nouveau professionnel'
+          : 'Nouveau patient';
+    }
+
+    return 'Utilisateur';
   }
 
   Future<void> _verify() async {
@@ -269,6 +308,7 @@ class _OtpVerifyPageState extends ConsumerState<OtpVerifyPage> {
     await ref.read(authControllerProvider.notifier).loginMock(
           name: _buildDisplayName(),
           phone: widget.phone,
+          role: widget.role,
         );
 
     if (!mounted) return;

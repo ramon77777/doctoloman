@@ -24,6 +24,7 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> loginMock({
     required String name,
     required String phone,
+    required AppUserRole role, // ✅ NEW
   }) async {
     state = AuthState.loading(user: state.user);
 
@@ -34,6 +35,7 @@ class AuthController extends StateNotifier<AuthState> {
       id: _buildStableUserId(normalizedPhone),
       name: normalizedName.isEmpty ? 'Utilisateur' : normalizedName,
       phone: normalizedPhone,
+      role: role, // ✅ NEW
     );
 
     await _repository.login(user);
@@ -78,6 +80,7 @@ class AuthController extends StateNotifier<AuthState> {
           id: 'local-user-2250000000000',
           name: 'Utilisateur',
           phone: '+2250000000000',
+          role: AppUserRole.patient, // ✅ fallback
         );
 
     state = AuthState.authenticated(user);

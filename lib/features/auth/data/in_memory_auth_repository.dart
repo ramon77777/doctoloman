@@ -37,6 +37,7 @@ class InMemoryAuthRepository implements AuthRepository {
       id: 'local-user',
       name: 'Utilisateur',
       phone: '+2250000000000',
+      role: AppUserRole.patient,
     );
 
     await _localStorage.saveSession(_currentUser!);
