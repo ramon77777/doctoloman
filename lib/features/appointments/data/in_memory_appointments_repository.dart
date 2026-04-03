@@ -27,6 +27,10 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     return value.trim();
   }
 
+  String _normalizePractitionerId(String value) {
+    return value.trim();
+  }
+
   String _normalizeSlot(String value) {
     return value.trim();
   }
@@ -35,20 +39,33 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     return _normalizeDay(a) == _normalizeDay(b);
   }
 
+  Appointment _normalizeAppointment(Appointment appointment) {
+    return appointment.copyWith(
+      practitionerId: _normalizePractitionerId(appointment.practitionerId),
+      day: _normalizeDay(appointment.day),
+      slot: _normalizeSlot(appointment.slot),
+    );
+  }
+
   bool _isSlotAlreadyTaken(
     List<Appointment> items,
     Appointment candidate, {
     String? excludeAppointmentId,
   }) {
+    final normalizedCandidate = _normalizeAppointment(candidate);
+
     for (final item in items) {
       if (excludeAppointmentId != null && item.id == excludeAppointmentId) {
         continue;
       }
 
-      final samePractitioner = item.practitionerId == candidate.practitionerId;
-      final sameDay = _isSameDay(item.day, candidate.day);
-      final sameSlot = item.slot == candidate.slot;
-      final isStillBlocking = !item.isCancelledLike;
+      final normalizedItem = _normalizeAppointment(item);
+
+      final samePractitioner = normalizedItem.practitionerId ==
+          normalizedCandidate.practitionerId;
+      final sameDay = _isSameDay(normalizedItem.day, normalizedCandidate.day);
+      final sameSlot = normalizedItem.slot == normalizedCandidate.slot;
+      final isStillBlocking = !normalizedItem.isCancelledLike;
 
       if (samePractitioner && sameDay && sameSlot && isStillBlocking) {
         return true;
@@ -61,16 +78,17 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
   @override
   Future<void> create(Appointment appointment) async {
     final items = await _loadItems();
+    final normalizedAppointment = _normalizeAppointment(appointment);
 
-    if (_isSlotAlreadyTaken(items, appointment)) {
+    if (_isSlotAlreadyTaken(items, normalizedAppointment)) {
       throw AppointmentSlotUnavailableException(
-        practitionerId: appointment.practitionerId,
-        day: appointment.day,
-        slot: appointment.slot,
+        practitionerId: normalizedAppointment.practitionerId,
+        day: normalizedAppointment.day,
+        slot: normalizedAppointment.slot,
       );
     }
 
-    final updated = List<Appointment>.from(items)..add(appointment);
+    final updated = List<Appointment>.from(items)..add(normalizedAppointment);
     await _persist(updated);
   }
 
@@ -81,9 +99,11 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
 
     final practitionerId = query.practitionerId?.trim();
     if (practitionerId != null && practitionerId.isNotEmpty) {
-      filtered = filtered
-          .where((item) => item.practitionerId == practitionerId)
-          .toList();
+      final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+      filtered = filtered.where((item) {
+        return _normalizePractitionerId(item.practitionerId) ==
+            normalizedPractitionerId;
+      }).toList();
     }
 
     if (query.status != null) {
@@ -136,11 +156,10 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
 
     final items = await _loadItems();
     for (final item in items) {
-      if (item.id == normalizedId) {
+      if (_normalizeId(item.id) == normalizedId) {
         return item;
       }
     }
-
     return null;
   }
 
@@ -153,7 +172,7 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     if (normalizedId.isEmpty) return;
 
     final items = await _loadItems();
-    final index = items.indexWhere((item) => item.id == normalizedId);
+    final index = items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
     if (index == -1) return;
 
     final updated = List<Appointment>.from(items);
@@ -171,7 +190,7 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     if (normalizedId.isEmpty) return null;
 
     final items = await _loadItems();
-    final index = items.indexWhere((item) => item.id == normalizedId);
+    final index = items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
     if (index == -1) return null;
 
     final current = items[index];
@@ -179,9 +198,11 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
       return null;
     }
 
-    final candidate = current.copyWith(
-      day: _normalizeDay(day),
-      slot: _normalizeSlot(slot),
+    final candidate = _normalizeAppointment(
+      current.copyWith(
+        day: _normalizeDay(day),
+        slot: _normalizeSlot(slot),
+      ),
     );
 
     if (_isSlotAlreadyTaken(

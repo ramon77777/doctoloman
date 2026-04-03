@@ -45,34 +45,31 @@ class _PractitionerDetailPageState
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  DateTime? _slotToDateTime(DateTime day, String slot) {
-    final start = _extractSlotStart(slot);
-    if (start == null) return null;
-
-    final parts = start.split(':');
-    if (parts.length != 2) return null;
-
-    final hour = int.tryParse(parts[0]);
-    final minute = int.tryParse(parts[1]);
-
-    if (hour == null || minute == null) return null;
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-
-    return DateTime(day.year, day.month, day.day, hour, minute);
-  }
-
   String? _extractSlotStart(String slot) {
     final normalized = slot.trim();
     if (normalized.isEmpty) return null;
 
-    if (normalized.contains(' - ')) {
-      final parts = normalized.split(' - ');
-      if (parts.isEmpty) return null;
-      final start = parts.first.trim();
-      return start.isEmpty ? null : start;
-    }
+    final parts = normalized.split(' - ');
+    if (parts.length != 2) return null;
 
-    return normalized;
+    final start = parts.first.trim();
+    return start.isEmpty ? null : start;
+  }
+
+  DateTime? _slotToDateTime(DateTime day, String slot) {
+    final start = _extractSlotStart(slot);
+    if (start == null) return null;
+
+    final startMinutes = toMinutes(start);
+    if (startMinutes == null) return null;
+
+    return DateTime(
+      day.year,
+      day.month,
+      day.day,
+      startMinutes ~/ 60,
+      startMinutes % 60,
+    );
   }
 
   bool _isSlotStillBookable(DateTime day, String slot) {
@@ -99,9 +96,11 @@ class _PractitionerDetailPageState
 
     return rawSlots.where((slot) {
       final normalizedSlot = slot.trim();
+
       if (normalizedTakenSlots.contains(normalizedSlot)) {
         return false;
       }
+
       return _isSlotStillBookable(selectedDay, normalizedSlot);
     }).toList();
   }

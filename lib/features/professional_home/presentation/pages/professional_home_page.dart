@@ -5,6 +5,7 @@ import '../../../../app/router/app_routes.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../../professional_schedule/presentation/providers/professional_schedule_providers.dart';
@@ -79,6 +80,87 @@ class ProfessionalHomePage extends ConsumerWidget {
     await ref.read(appointmentsListProvider.future);
   }
 
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Se déconnecter'),
+            content: const Text(
+              'Voulez-vous vraiment vous déconnecter de l’espace professionnel ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Déconnexion'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirm) return;
+
+    await ref.read(authControllerProvider.notifier).logout();
+
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Vous êtes déconnecté.'),
+        ),
+      );
+  }
+
+  Future<void> _openSessionMenu(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.badge_outlined),
+                  title: const Text('Profil professionnel'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).pushNamed(AppRoutes.professionalProfile);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.schedule_outlined),
+                  title: const Text('Mes disponibilités'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).pushNamed(AppRoutes.professionalSchedule);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Se déconnecter'),
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _handleLogout(context, ref);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appointmentsAsync = ref.watch(appointmentsListProvider);
@@ -97,6 +179,11 @@ class ProfessionalHomePage extends ConsumerWidget {
               Navigator.of(context).pushNamed(AppRoutes.professionalProfile);
             },
             icon: const Icon(Icons.badge_outlined),
+          ),
+          IconButton(
+            tooltip: 'Session',
+            onPressed: () => _openSessionMenu(context, ref),
+            icon: const Icon(Icons.more_vert),
           ),
         ],
       ),
@@ -141,8 +228,9 @@ class ProfessionalHomePage extends ConsumerWidget {
 
                   final nextPending =
                       data.pending.isNotEmpty ? data.pending.first : null;
-                  final nextToday =
-                      data.todayConfirmed.isNotEmpty ? data.todayConfirmed.first : null;
+                  final nextToday = data.todayConfirmed.isNotEmpty
+                      ? data.todayConfirmed.first
+                      : null;
 
                   return Column(
                     children: [
@@ -195,7 +283,8 @@ class ProfessionalHomePage extends ConsumerWidget {
                           context,
                           ref,
                           appointment: appointment,
-                          newStatus: AppointmentStatus.declinedByProfessional,
+                          newStatus:
+                              AppointmentStatus.declinedByProfessional,
                           title: 'Refuser la demande',
                           message:
                               'Souhaitez-vous refuser cette demande pour ${appointment.patientFullName} ?',
@@ -345,7 +434,7 @@ class _StatsGrid extends StatelessWidget {
       mainAxisSpacing: 12,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.55,
+      childAspectRatio: 1.15,
       children: [
         _StatCard(
           icon: Icons.pending_actions_outlined,
@@ -386,25 +475,35 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Icon(icon, color: cs.primary),
-            const Spacer(),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall,
+            const SizedBox(height: 10),
+            Flexible(
+              child: FittedBox(
+                alignment: Alignment.centerLeft,
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: textTheme.headlineMedium,
+                ),
+              ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 6),
             Text(
               title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
             ),
           ],
         ),

@@ -60,21 +60,25 @@ class _ProfessionalAppointmentsPageState
   @override
   void initState() {
     super.initState();
-    _searchCtrl = TextEditingController();
-    _searchCtrl.addListener(_onSearchChanged);
+    _searchCtrl = TextEditingController()..addListener(_handleSearchChanged);
   }
 
   @override
   void dispose() {
     _searchCtrl
-      ..removeListener(_onSearchChanged)
+      ..removeListener(_handleSearchChanged)
       ..dispose();
     super.dispose();
   }
 
-  void _onSearchChanged() {
+  void _handleSearchChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(appointmentsListProvider);
+    await ref.read(appointmentsListProvider.future);
   }
 
   Future<void> _confirmStatusChange(
@@ -124,11 +128,6 @@ class _ProfessionalAppointmentsPageState
       );
   }
 
-  Future<void> _refresh(WidgetRef ref) async {
-    ref.invalidate(appointmentsListProvider);
-    await ref.read(appointmentsListProvider.future);
-  }
-
   @override
   Widget build(BuildContext context) {
     final appointmentsAsync = ref.watch(appointmentsListProvider);
@@ -148,6 +147,13 @@ class _ProfessionalAppointmentsPageState
       ),
       body: SafeArea(
         child: appointmentsAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(),
+          ),
+          error: (error, _) => ErrorStateView(
+            message: 'Impossible de charger les rendez-vous : $error',
+            onRetry: () => ref.invalidate(appointmentsListProvider),
+          ),
           data: (items) {
             final professionalItems = items
                 .where((item) => _belongsToProfessional(item, profile))
@@ -155,8 +161,8 @@ class _ProfessionalAppointmentsPageState
                 .toList();
 
             final sections = _buildSectionsData(professionalItems);
-            final filteredItems = _applySelectedFilter(
-              selectedFilter: _selectedFilter,
+            final currentItems = _itemsForSelectedFilter(
+              filter: _selectedFilter,
               sections: sections,
             );
 
@@ -221,7 +227,7 @@ class _ProfessionalAppointmentsPageState
                     },
                   ),
                   const SizedBox(height: 16),
-                  if (filteredItems.isEmpty)
+                  if (currentItems.isEmpty)
                     const EmptyStateView(
                       icon: Icons.manage_search_outlined,
                       title: 'Aucun résultat',
@@ -229,21 +235,16 @@ class _ProfessionalAppointmentsPageState
                           'Aucun rendez-vous ne correspond à votre recherche ou au filtre sélectionné.',
                     )
                   else
-                    ..._buildVisibleSections(
+                    ..._buildSections(
                       context,
                       ref,
                       sections: sections,
+                      selectedFilter: _selectedFilter,
                     ),
                 ],
               ),
             );
           },
-          loading: () => const Center(
-            child: CircularProgressIndicator(),
-          ),
-          error: (error, _) => ErrorStateView(
-            message: 'Erreur : $error',
-          ),
         ),
       ),
     );
@@ -266,10 +267,10 @@ class _ProfessionalAppointmentsPageState
     final pastConfirmed = all.where(_isPastConfirmedAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
-    final patientCancelled = all.where(_isPatientCancelledAppointment).toList()
+    final declined = all.where(_isDeclinedAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
-    final declined = all.where(_isDeclinedAppointment).toList()
+    final patientCancelled = all.where(_isPatientCancelledAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     final closed = <Appointment>[
@@ -289,33 +290,14 @@ class _ProfessionalAppointmentsPageState
     );
   }
 
-  List<Appointment> _applySelectedFilter({
-    required _ProfessionalAppointmentsFilter selectedFilter,
-    required _ProfessionalAppointmentsSections sections,
-  }) {
-    switch (selectedFilter) {
-      case _ProfessionalAppointmentsFilter.all:
-        return sections.all;
-      case _ProfessionalAppointmentsFilter.today:
-        return sections.today;
-      case _ProfessionalAppointmentsFilter.pending:
-        return sections.pending;
-      case _ProfessionalAppointmentsFilter.upcoming:
-        return sections.upcomingConfirmed;
-      case _ProfessionalAppointmentsFilter.past:
-        return sections.pastConfirmed;
-      case _ProfessionalAppointmentsFilter.closed:
-        return sections.closed;
-    }
-  }
-
-  List<Widget> _buildVisibleSections(
+  List<Widget> _buildSections(
     BuildContext context,
     WidgetRef ref, {
     required _ProfessionalAppointmentsSections sections,
+    required _ProfessionalAppointmentsFilter selectedFilter,
   }) {
     final widgets = <Widget>[];
-    final showAll = _selectedFilter == _ProfessionalAppointmentsFilter.all;
+    final showAll = selectedFilter == _ProfessionalAppointmentsFilter.all;
 
     void addSection({
       required bool visible,
@@ -388,8 +370,7 @@ class _ProfessionalAppointmentsPageState
     }
 
     addSection(
-      visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.today,
+      visible: showAll || selectedFilter == _ProfessionalAppointmentsFilter.today,
       title: 'Aujourd’hui',
       subtitle: 'Vos consultations confirmées du jour',
       icon: Icons.today_outlined,
@@ -399,7 +380,7 @@ class _ProfessionalAppointmentsPageState
 
     addSection(
       visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.pending,
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.pending,
       title: 'Demandes en attente',
       subtitle: 'À confirmer ou refuser',
       icon: Icons.pending_actions_outlined,
@@ -410,7 +391,7 @@ class _ProfessionalAppointmentsPageState
 
     addSection(
       visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.upcoming,
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.upcoming,
       title: 'À venir',
       subtitle: 'Rendez-vous confirmés à venir',
       icon: Icons.event_available_outlined,
@@ -419,8 +400,7 @@ class _ProfessionalAppointmentsPageState
     );
 
     addSection(
-      visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.past,
+      visible: showAll || selectedFilter == _ProfessionalAppointmentsFilter.past,
       title: 'Passés',
       subtitle: 'Historique des rendez-vous confirmés',
       icon: Icons.history_outlined,
@@ -430,7 +410,7 @@ class _ProfessionalAppointmentsPageState
 
     addSection(
       visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.closed,
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.closed,
       title: 'Demandes refusées',
       subtitle: 'Demandes non retenues par le professionnel',
       icon: Icons.block_outlined,
@@ -440,7 +420,7 @@ class _ProfessionalAppointmentsPageState
 
     addSection(
       visible:
-          showAll || _selectedFilter == _ProfessionalAppointmentsFilter.closed,
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.closed,
       title: 'Annulés par les patients',
       subtitle: 'Demandes ou rendez-vous annulés côté patient',
       icon: Icons.event_busy_outlined,
@@ -449,6 +429,26 @@ class _ProfessionalAppointmentsPageState
     );
 
     return widgets;
+  }
+
+  List<Appointment> _itemsForSelectedFilter({
+    required _ProfessionalAppointmentsFilter filter,
+    required _ProfessionalAppointmentsSections sections,
+  }) {
+    switch (filter) {
+      case _ProfessionalAppointmentsFilter.all:
+        return sections.all;
+      case _ProfessionalAppointmentsFilter.today:
+        return sections.today;
+      case _ProfessionalAppointmentsFilter.pending:
+        return sections.pending;
+      case _ProfessionalAppointmentsFilter.upcoming:
+        return sections.upcomingConfirmed;
+      case _ProfessionalAppointmentsFilter.past:
+        return sections.pastConfirmed;
+      case _ProfessionalAppointmentsFilter.closed:
+        return sections.closed;
+    }
   }
 }
 
@@ -761,24 +761,54 @@ class _PendingCardActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onConfirm,
-              icon: const Icon(Icons.check_circle_outline),
-              label: const Text('Confirmer'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: onRefuse,
-              icon: const Icon(Icons.event_busy_outlined),
-              label: const Text('Refuser'),
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 360;
+
+          if (compact) {
+            return Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onConfirm,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Confirmer'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: onRefuse,
+                    icon: const Icon(Icons.event_busy_outlined),
+                    label: const Text('Refuser'),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onConfirm,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('Confirmer'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onRefuse,
+                  icon: const Icon(Icons.event_busy_outlined),
+                  label: const Text('Refuser'),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

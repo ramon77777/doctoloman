@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/professional_schedule.dart';
 
-const _professionalSchedulesStorageKey = 'professional_schedules_v1';
+const _professionalSchedulesStorageKey = 'professional_schedules_v2';
 const _defaultPractitionerId = 'pro_001';
 
 final practitionerScheduleProvider =
@@ -32,69 +32,75 @@ class ProfessionalScheduleController
   final SharedPreferences _prefs;
 
   static final List<DaySchedule> defaultSchedule = List<DaySchedule>.unmodifiable(
-    [
-      const DaySchedule(
+    const [
+      DaySchedule(
         weekday: 1,
         label: 'Lundi',
         isOpen: true,
-        morningStart: '08:30',
-        morningEnd: '12:00',
-        afternoonStart: '14:00',
-        afternoonEnd: '17:30',
+        slots: [
+          TimeSlot(start: '08:00', end: '08:15'),
+          TimeSlot(start: '08:15', end: '08:30'),
+          TimeSlot(start: '08:30', end: '08:45'),
+          TimeSlot(start: '08:45', end: '09:00'),
+          TimeSlot(start: '14:00', end: '14:15'),
+          TimeSlot(start: '14:15', end: '14:30'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 2,
         label: 'Mardi',
         isOpen: true,
-        morningStart: '08:30',
-        morningEnd: '12:00',
-        afternoonStart: '14:00',
-        afternoonEnd: '17:30',
+        slots: [
+          TimeSlot(start: '08:00', end: '08:15'),
+          TimeSlot(start: '08:15', end: '08:30'),
+          TimeSlot(start: '14:00', end: '14:15'),
+          TimeSlot(start: '14:15', end: '14:30'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 3,
         label: 'Mercredi',
         isOpen: true,
-        morningStart: '08:30',
-        morningEnd: '12:00',
-        afternoonStart: '14:00',
-        afternoonEnd: '17:30',
+        slots: [
+          TimeSlot(start: '08:30', end: '08:45'),
+          TimeSlot(start: '08:45', end: '09:00'),
+          TimeSlot(start: '09:00', end: '09:20'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 4,
         label: 'Jeudi',
         isOpen: true,
-        morningStart: '08:30',
-        morningEnd: '12:00',
-        afternoonStart: '14:00',
-        afternoonEnd: '17:30',
+        slots: [
+          TimeSlot(start: '10:00', end: '10:20'),
+          TimeSlot(start: '10:30', end: '10:50'),
+          TimeSlot(start: '15:00', end: '15:30'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 5,
         label: 'Vendredi',
         isOpen: true,
-        morningStart: '08:30',
-        morningEnd: '12:00',
-        afternoonStart: '14:00',
-        afternoonEnd: '17:00',
+        slots: [
+          TimeSlot(start: '08:10', end: '08:18'),
+          TimeSlot(start: '08:20', end: '08:35'),
+          TimeSlot(start: '09:00', end: '09:12'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 6,
         label: 'Samedi',
         isOpen: true,
-        morningStart: '09:00',
-        morningEnd: '12:00',
-        afternoonStart: null,
-        afternoonEnd: null,
+        slots: [
+          TimeSlot(start: '09:00', end: '09:20'),
+          TimeSlot(start: '09:30', end: '09:50'),
+        ],
       ),
-      const DaySchedule(
+      DaySchedule(
         weekday: 7,
         label: 'Dimanche',
         isOpen: false,
-        morningStart: null,
-        morningEnd: null,
-        afternoonStart: null,
-        afternoonEnd: null,
+        slots: [],
       ),
     ],
   );
@@ -129,7 +135,7 @@ class ProfessionalScheduleController
             final day = DaySchedule.fromMap(Map<String, dynamic>.from(entry));
             days.add(day);
           } catch (_) {
-            // On ignore uniquement l’entrée invalide pour préserver le reste.
+            // Ignore uniquement l'entrée invalide.
           }
         }
 
@@ -171,8 +177,7 @@ class ProfessionalScheduleController
         if (day.weekday == weekday)
           day.copyWith(
             isOpen: open,
-            clearMorning: !open,
-            clearAfternoon: !open,
+            clearSlots: !open,
           )
         else
           day,
@@ -181,11 +186,10 @@ class ProfessionalScheduleController
     await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
-  Future<void> updateMorning({
+  Future<void> addSlot({
     required String practitionerId,
     required int weekday,
-    required String start,
-    required String end,
+    required TimeSlot slot,
   }) async {
     final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
     final current = scheduleFor(normalizedPractitionerId);
@@ -195,8 +199,7 @@ class ProfessionalScheduleController
         if (day.weekday == weekday)
           day.copyWith(
             isOpen: true,
-            morningStart: start.trim(),
-            morningEnd: end.trim(),
+            slots: sortTimeSlots([...day.slots, slot]),
           )
         else
           day,
@@ -205,11 +208,11 @@ class ProfessionalScheduleController
     await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
-  Future<void> updateAfternoon({
+  Future<void> updateSlot({
     required String practitionerId,
     required int weekday,
-    required String start,
-    required String end,
+    required int slotIndex,
+    required TimeSlot slot,
   }) async {
     final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
     final current = scheduleFor(normalizedPractitionerId);
@@ -219,8 +222,7 @@ class ProfessionalScheduleController
         if (day.weekday == weekday)
           day.copyWith(
             isOpen: true,
-            afternoonStart: start.trim(),
-            afternoonEnd: end.trim(),
+            slots: _replaceSlot(day.slots, slotIndex, slot),
           )
         else
           day,
@@ -229,29 +231,20 @@ class ProfessionalScheduleController
     await _replacePractitionerSchedule(normalizedPractitionerId, next);
   }
 
-  Future<void> clearMorning(String practitionerId, int weekday) async {
+  Future<void> removeSlot({
+    required String practitionerId,
+    required int weekday,
+    required int slotIndex,
+  }) async {
     final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
     final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
         if (day.weekday == weekday)
-          day.copyWith(clearMorning: true)
-        else
-          day,
-    ];
-
-    await _replacePractitionerSchedule(normalizedPractitionerId, next);
-  }
-
-  Future<void> clearAfternoon(String practitionerId, int weekday) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
-    final current = scheduleFor(normalizedPractitionerId);
-
-    final next = [
-      for (final day in current)
-        if (day.weekday == weekday)
-          day.copyWith(clearAfternoon: true)
+          day.copyWith(
+            slots: _removeSlot(day.slots, slotIndex),
+          )
         else
           day,
     ];
@@ -307,7 +300,15 @@ class ProfessionalScheduleController
 
   static List<DaySchedule> _cloneSchedule(List<DaySchedule> input) {
     return List<DaySchedule>.unmodifiable(
-      input.map((day) => day.copyWith()).toList(),
+      input
+          .map(
+            (day) => day.copyWith(
+              slots: List<TimeSlot>.unmodifiable(
+                day.slots.map((slot) => slot.copyWith()).toList(),
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -316,12 +317,40 @@ class ProfessionalScheduleController
 
     final deduplicatedByWeekday = <int, DaySchedule>{};
     for (final day in sorted) {
-      deduplicatedByWeekday[day.weekday] = day;
+      deduplicatedByWeekday[day.weekday] = day.copyWith(
+        slots: sortTimeSlots(day.slots),
+      );
     }
 
     return List<DaySchedule>.unmodifiable(
       deduplicatedByWeekday.values.toList()
         ..sort((a, b) => a.weekday.compareTo(b.weekday)),
     );
+  }
+
+  static List<TimeSlot> _replaceSlot(
+    List<TimeSlot> slots,
+    int slotIndex,
+    TimeSlot slot,
+  ) {
+    if (slotIndex < 0 || slotIndex >= slots.length) {
+      return sortTimeSlots(slots);
+    }
+
+    final updated = [...slots];
+    updated[slotIndex] = slot;
+    return sortTimeSlots(updated);
+  }
+
+  static List<TimeSlot> _removeSlot(
+    List<TimeSlot> slots,
+    int slotIndex,
+  ) {
+    if (slotIndex < 0 || slotIndex >= slots.length) {
+      return sortTimeSlots(slots);
+    }
+
+    final updated = [...slots]..removeAt(slotIndex);
+    return sortTimeSlots(updated);
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/models/app_user.dart';
 import '../../../../core/services/local_notifications_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/appointments_local_storage.dart';
@@ -21,7 +22,7 @@ final appointmentsRepositoryProvider = Provider<AppointmentsRepository>(
 );
 
 /// Liste brute de tous les rendez-vous présents dans le stockage local.
-/// Cette source sert notamment au calcul des créneaux déjà pris.
+/// Sert notamment au calcul des créneaux déjà pris.
 final allAppointmentsProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final repo = ref.watch(appointmentsRepositoryProvider);
@@ -37,9 +38,9 @@ final allAppointmentsProvider = FutureProvider<List<Appointment>>(
   name: 'allAppointmentsProvider',
 );
 
-/// Liste des rendez-vous visibles pour le patient connecté.
-/// On filtre par téléphone patient pour éviter de mélanger les rendez-vous
-/// de plusieurs sessions/utilisateurs sur un même stockage local mock.
+/// Liste adaptée à l'utilisateur connecté :
+/// - patient => ses rendez-vous
+/// - professionnel => ses rendez-vous en tant que praticien
 final appointmentsListProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final authState = ref.watch(authControllerProvider);
@@ -48,6 +49,21 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
 
     if (authUser == null) {
       return const <Appointment>[];
+    }
+
+    if (authUser.role == AppUserRole.professional) {
+      final professionalId = _normalizeKey(authUser.id);
+      final professionalName = _normalizeSearch(authUser.name);
+
+      final filtered = allItems.where((appointment) {
+        final byId = _normalizeKey(appointment.practitionerId) == professionalId;
+        final byName =
+            _normalizeSearch(appointment.practitionerName) == professionalName;
+        return byId || byName;
+      }).toList()
+        ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+      return List<Appointment>.unmodifiable(filtered);
     }
 
     final normalizedPhone = _normalizePhoneKey(authUser.phone);
@@ -77,6 +93,21 @@ final appointmentByIdProvider =
   final repo = ref.watch(appointmentsRepositoryProvider);
   final appointment = await repo.getById(normalizedId);
   if (appointment == null) return null;
+
+  if (authUser.role == AppUserRole.professional) {
+    final professionalId = _normalizeKey(authUser.id);
+    final professionalName = _normalizeSearch(authUser.name);
+
+    final byId = _normalizeKey(appointment.practitionerId) == professionalId;
+    final byName =
+        _normalizeSearch(appointment.practitionerName) == professionalName;
+
+    if (!byId && !byName) {
+      return null;
+    }
+
+    return appointment;
+  }
 
   final normalizedPhone = _normalizePhoneKey(authUser.phone);
   if (_normalizePhoneKey(appointment.patientPhoneE164) != normalizedPhone) {
@@ -273,8 +304,7 @@ class TakenSlotsQuery {
 }
 
 /// Calcule les créneaux déjà pris pour un praticien donné et une journée donnée.
-/// Ici on se base sur la source brute de rendez-vous, pas sur la liste filtrée
-/// du patient connecté, sinon la disponibilité deviendrait incohérente.
+/// On se base sur la source brute pour éviter toute incohérence d’affichage.
 final takenSlotsForPractitionerDayProvider =
     FutureProvider.family<Set<String>, TakenSlotsQuery>((ref, query) async {
   final items = await ref.watch(allAppointmentsProvider.future);

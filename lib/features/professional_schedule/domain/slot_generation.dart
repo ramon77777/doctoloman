@@ -13,21 +13,12 @@ class SlotGenerationResult {
 SlotGenerationResult buildSlotsForDay({
   required DaySchedule schedule,
   required DateTime selectedDay,
-  int intervalMinutes = 30,
-  int consultationDurationMinutes = 30,
   int minimumLeadTimeMinutes = 60,
   DateTime? now,
 }) {
   if (!schedule.isOpen) {
     return const SlotGenerationResult(
       isOpen: false,
-      slots: [],
-    );
-  }
-
-  if (intervalMinutes <= 0 || consultationDurationMinutes <= 0) {
-    return const SlotGenerationResult(
-      isOpen: true,
       slots: [],
     );
   }
@@ -57,67 +48,38 @@ SlotGenerationResult buildSlotsForDay({
     Duration(minutes: minimumLeadTimeMinutes),
   );
 
-  final slots = <String>[];
+  final availableSlots = <String>[];
 
-  void addRange(String? start, String? end) {
-    if (start == null || end == null) return;
+  for (final slot in schedule.slots) {
+    final startMinutes = toMinutes(slot.start);
+    final endMinutes = toMinutes(slot.end);
 
-    final startMinutes = _toMinutes(start);
-    final endMinutes = _toMinutes(end);
-
-    if (startMinutes == null || endMinutes == null) return;
-    if (endMinutes <= startMinutes) return;
-
-    var cursor = startMinutes;
-
-    while (cursor + consultationDurationMinutes <= endMinutes) {
-      final slotStart = DateTime(
-        normalizedSelectedDay.year,
-        normalizedSelectedDay.month,
-        normalizedSelectedDay.day,
-        cursor ~/ 60,
-        cursor % 60,
-      );
-
-      final slotEndMinutes = cursor + consultationDurationMinutes;
-
-      final isTooSoon = slotStart.isBefore(earliestAllowed);
-
-      if (!isTooSoon) {
-        slots.add(
-          '${_formatMinutes(cursor)} - ${_formatMinutes(slotEndMinutes)}',
-        );
-      }
-
-      cursor += intervalMinutes;
+    if (startMinutes == null || endMinutes == null) {
+      continue;
     }
-  }
 
-  addRange(schedule.morningStart, schedule.morningEnd);
-  addRange(schedule.afternoonStart, schedule.afternoonEnd);
+    if (endMinutes <= startMinutes) {
+      continue;
+    }
+
+    final slotStart = DateTime(
+      normalizedSelectedDay.year,
+      normalizedSelectedDay.month,
+      normalizedSelectedDay.day,
+      startMinutes ~/ 60,
+      startMinutes % 60,
+    );
+
+    final isTooSoon = slotStart.isBefore(earliestAllowed);
+    if (isTooSoon) {
+      continue;
+    }
+
+    availableSlots.add('${slot.start} - ${slot.end}');
+  }
 
   return SlotGenerationResult(
     isOpen: true,
-    slots: List<String>.unmodifiable(slots),
+    slots: List<String>.unmodifiable(availableSlots),
   );
-}
-
-int? _toMinutes(String hhmm) {
-  final value = hhmm.trim();
-  final parts = value.split(':');
-  if (parts.length != 2) return null;
-
-  final hh = int.tryParse(parts[0]);
-  final mm = int.tryParse(parts[1]);
-
-  if (hh == null || mm == null) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-
-  return hh * 60 + mm;
-}
-
-String _formatMinutes(int totalMinutes) {
-  final hh = (totalMinutes ~/ 60).toString().padLeft(2, '0');
-  final mm = (totalMinutes % 60).toString().padLeft(2, '0');
-  return '$hh:$mm';
 }

@@ -5,14 +5,28 @@ import '../../../professional_profile/presentation/providers/professional_profil
 import '../../domain/professional_schedule.dart';
 import '../providers/professional_schedule_providers.dart';
 
-class ProfessionalSchedulePage extends ConsumerWidget {
+class ProfessionalSchedulePage extends ConsumerStatefulWidget {
   const ProfessionalSchedulePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfessionalSchedulePage> createState() =>
+      _ProfessionalSchedulePageState();
+}
+
+class _ProfessionalSchedulePageState
+    extends ConsumerState<ProfessionalSchedulePage> {
+  int _selectedWeekday = 1;
+
+  @override
+  Widget build(BuildContext context) {
     final profile = ref.watch(professionalProfileProvider);
     final practitionerId = profile.id;
     final schedule = ref.watch(practitionerScheduleProvider(practitionerId));
+
+    final selectedDay = schedule.firstWhere(
+      (day) => day.weekday == _selectedWeekday,
+      orElse: () => schedule.first,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -32,7 +46,7 @@ class ProfessionalSchedulePage extends ConsumerWidget {
                 ..hideCurrentSnackBar()
                 ..showSnackBar(
                   const SnackBar(
-                    content: Text('Horaires réinitialisés.'),
+                    content: Text('Créneaux réinitialisés.'),
                   ),
                 );
             },
@@ -40,6 +54,17 @@ class ProfessionalSchedulePage extends ConsumerWidget {
           ),
         ],
       ),
+      floatingActionButton: selectedDay.isOpen
+          ? FloatingActionButton.extended(
+              onPressed: () => _showSlotEditor(
+                context,
+                practitionerId: practitionerId,
+                weekday: selectedDay.weekday,
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('Ajouter un créneau'),
+            )
+          : null,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -48,20 +73,35 @@ class ProfessionalSchedulePage extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Text(
-                  'Définissez les jours ouverts et les plages de consultation. '
-                  'Cette base servira ensuite à relier les créneaux côté patient.',
+                  'Sélectionnez un jour puis définissez librement les créneaux de consultation. '
+                  'Vous pouvez saisir des créneaux personnalisés comme 08:10 - 08:18 ou 08:20 - 08:35.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
             ),
             const SizedBox(height: 14),
-            ...schedule.map(
-              (day) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _DayScheduleCard(
-                  practitionerId: practitionerId,
-                  day: day,
-                ),
+            _WeekdayTabs(
+              days: schedule,
+              selectedWeekday: selectedDay.weekday,
+              onSelected: (weekday) {
+                setState(() => _selectedWeekday = weekday);
+              },
+            ),
+            const SizedBox(height: 14),
+            _SelectedDayCard(
+              practitionerId: practitionerId,
+              day: selectedDay,
+              onAddSlot: () => _showSlotEditor(
+                context,
+                practitionerId: practitionerId,
+                weekday: selectedDay.weekday,
+              ),
+              onEditSlot: (index, slot) => _showSlotEditor(
+                context,
+                practitionerId: practitionerId,
+                weekday: selectedDay.weekday,
+                slotIndex: index,
+                initialSlot: slot,
               ),
             ),
           ],
@@ -69,38 +109,33 @@ class ProfessionalSchedulePage extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _DayScheduleCard extends ConsumerWidget {
-  const _DayScheduleCard({
-    required this.practitionerId,
-    required this.day,
-  });
-
-  final String practitionerId;
-  final DaySchedule day;
-
-  Future<void> _editRange(
-    BuildContext context,
-    WidgetRef ref, {
-    required String title,
-    required String? initialStart,
-    required String? initialEnd,
-    required bool isMorning,
-    required Future<void> Function(String start, String end) onSave,
-    required Future<void> Function() onClear,
+  Future<void> _showSlotEditor(
+    BuildContext context, {
+    required String practitionerId,
+    required int weekday,
+    int? slotIndex,
+    TimeSlot? initialSlot,
   }) async {
-    final startCtrl = TextEditingController(text: initialStart ?? '');
-    final endCtrl = TextEditingController(text: initialEnd ?? '');
+    final isEditing = slotIndex != null && initialSlot != null;
+
+    final startCtrl = TextEditingController(text: initialSlot?.start ?? '');
+    final endCtrl = TextEditingController(text: initialSlot?.end ?? '');
     final formKey = GlobalKey<FormState>();
     final messenger = ScaffoldMessenger.of(context);
+    final controller = ref.read(professionalSchedulesMapProvider.notifier);
+    final currentDay = ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
+          (day) => day.weekday == weekday,
+        );
 
     try {
-      final result = await showDialog<_TimeRangeAction>(
+      final result = await showDialog<_SlotEditorAction>(
         context: context,
         builder: (ctx) {
           return AlertDialog(
-            title: Text(title),
+            title: Text(
+              isEditing ? 'Modifier le créneau' : 'Ajouter un créneau',
+            ),
             content: Form(
               key: formKey,
               child: Column(
@@ -111,7 +146,7 @@ class _DayScheduleCard extends ConsumerWidget {
                     keyboardType: TextInputType.datetime,
                     decoration: const InputDecoration(
                       labelText: 'Début',
-                      hintText: '08:30',
+                      hintText: '08:10',
                     ),
                     validator: _validateHour,
                   ),
@@ -121,7 +156,7 @@ class _DayScheduleCard extends ConsumerWidget {
                     keyboardType: TextInputType.datetime,
                     decoration: const InputDecoration(
                       labelText: 'Fin',
-                      hintText: '12:00',
+                      hintText: '08:18',
                     ),
                     validator: _validateHour,
                   ),
@@ -130,20 +165,19 @@ class _DayScheduleCard extends ConsumerWidget {
             ),
             actions: [
               TextButton(
-                onPressed: () =>
-                    Navigator.of(ctx).pop(_TimeRangeAction.cancel),
+                onPressed: () => Navigator.of(ctx).pop(_SlotEditorAction.cancel),
                 child: const Text('Fermer'),
               ),
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(ctx).pop(_TimeRangeAction.clear),
-                child: const Text('Effacer'),
-              ),
+              if (isEditing)
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(_SlotEditorAction.delete),
+                  child: const Text('Supprimer'),
+                ),
               FilledButton(
                 onPressed: () {
                   final ok = formKey.currentState?.validate() ?? false;
                   if (!ok) return;
-                  Navigator.of(ctx).pop(_TimeRangeAction.save);
+                  Navigator.of(ctx).pop(_SlotEditorAction.save);
                 },
                 child: const Text('Enregistrer'),
               ),
@@ -152,32 +186,33 @@ class _DayScheduleCard extends ConsumerWidget {
         },
       );
 
-      if (result == _TimeRangeAction.clear) {
-        await onClear();
+      if (result == _SlotEditorAction.delete && isEditing) {
+        await controller.removeSlot(
+          practitionerId: practitionerId,
+          weekday: weekday,
+          slotIndex: slotIndex,
+        );
 
         if (!context.mounted) return;
-
         messenger
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(
-              content: Text('$title effacé.'),
-            ),
+            const SnackBar(content: Text('Créneau supprimé.')),
           );
         return;
       }
 
-      if (result != _TimeRangeAction.save) return;
+      if (result != _SlotEditorAction.save) return;
 
-      final start = startCtrl.text.trim();
-      final end = endCtrl.text.trim();
+      final newSlot = TimeSlot(
+        start: startCtrl.text.trim(),
+        end: endCtrl.text.trim(),
+      );
 
-      final validationError = _validateTimeRange(
-        start: start,
-        end: end,
-        otherStart: isMorning ? day.afternoonStart : day.morningStart,
-        otherEnd: isMorning ? day.afternoonEnd : day.morningEnd,
-        isMorning: isMorning,
+      final validationError = _validateSlotAgainstDay(
+        slot: newSlot,
+        existingSlots: currentDay.slots,
+        editingIndex: slotIndex,
       );
 
       if (validationError != null) {
@@ -190,15 +225,29 @@ class _DayScheduleCard extends ConsumerWidget {
         return;
       }
 
-      await onSave(start, end);
+      if (isEditing) {
+        await controller.updateSlot(
+          practitionerId: practitionerId,
+          weekday: weekday,
+          slotIndex: slotIndex,
+          slot: newSlot,
+        );
+      } else {
+        await controller.addSlot(
+          practitionerId: practitionerId,
+          weekday: weekday,
+          slot: newSlot,
+        );
+      }
 
       if (!context.mounted) return;
-
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Text('$title mis à jour.'),
+            content: Text(
+              isEditing ? 'Créneau mis à jour.' : 'Créneau ajouté.',
+            ),
           ),
         );
     } finally {
@@ -206,16 +255,82 @@ class _DayScheduleCard extends ConsumerWidget {
       endCtrl.dispose();
     }
   }
+}
+
+class _WeekdayTabs extends StatelessWidget {
+  const _WeekdayTabs({
+    required this.days,
+    required this.selectedWeekday,
+    required this.onSelected,
+  });
+
+  final List<DaySchedule> days;
+  final int selectedWeekday;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: days.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final day = days[index];
+          final isSelected = day.weekday == selectedWeekday;
+          final cs = Theme.of(context).colorScheme;
+
+          return InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => onSelected(day.weekday),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected ? cs.primary : cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Center(
+                child: Text(
+                  day.label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: isSelected ? cs.onPrimary : cs.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SelectedDayCard extends ConsumerWidget {
+  const _SelectedDayCard({
+    required this.practitionerId,
+    required this.day,
+    required this.onAddSlot,
+    required this.onEditSlot,
+  });
+
+  final String practitionerId;
+  final DaySchedule day;
+  final VoidCallback onAddSlot;
+  final void Function(int index, TimeSlot slot) onEditSlot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
     final controller = ref.read(professionalSchedulesMapProvider.notifier);
+    final cs = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
@@ -237,69 +352,64 @@ class _DayScheduleCard extends ConsumerWidget {
                 ),
               ],
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                day.summary,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-              ),
+            Text(
+              day.summary,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
             ),
-            if (day.isOpen) ...[
+            if (!day.isOpen) ...[
               const SizedBox(height: 14),
-              _RangeTile(
-                label: 'Matin',
-                value: day.morningLabel,
-                onTap: () => _editRange(
-                  context,
-                  ref,
-                  title: '${day.label} • Matin',
-                  initialStart: day.morningStart,
-                  initialEnd: day.morningEnd,
-                  isMorning: true,
-                  onSave: (start, end) {
-                    return controller.updateMorning(
-                      practitionerId: practitionerId,
-                      weekday: day.weekday,
-                      start: start,
-                      end: end,
-                    );
-                  },
-                  onClear: () {
-                    return controller.clearMorning(
-                      practitionerId,
-                      day.weekday,
-                    );
-                  },
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Ce jour est fermé. Activez-le pour ajouter des créneaux.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                 ),
               ),
-              const SizedBox(height: 10),
-              _RangeTile(
-                label: 'Après-midi',
-                value: day.afternoonLabel,
-                onTap: () => _editRange(
-                  context,
-                  ref,
-                  title: '${day.label} • Après-midi',
-                  initialStart: day.afternoonStart,
-                  initialEnd: day.afternoonEnd,
-                  isMorning: false,
-                  onSave: (start, end) {
-                    return controller.updateAfternoon(
-                      practitionerId: practitionerId,
-                      weekday: day.weekday,
-                      start: start,
-                      end: end,
-                    );
-                  },
-                  onClear: () {
-                    return controller.clearAfternoon(
-                      practitionerId,
-                      day.weekday,
+            ] else ...[
+              const SizedBox(height: 14),
+              if (day.slots.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Aucun créneau défini pour ce jour.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                  ),
+                )
+              else
+                ...day.slots.asMap().entries.map(
+                  (entry) {
+                    final index = entry.key;
+                    final slot = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _SlotTile(
+                        slot: slot,
+                        onEdit: () => onEditSlot(index, slot),
+                      ),
                     );
                   },
                 ),
+              const SizedBox(height: 4),
+              OutlinedButton.icon(
+                onPressed: onAddSlot,
+                icon: const Icon(Icons.add),
+                label: const Text('Ajouter un créneau'),
               ),
             ],
           ],
@@ -309,44 +419,35 @@ class _DayScheduleCard extends ConsumerWidget {
   }
 }
 
-class _RangeTile extends StatelessWidget {
-  const _RangeTile({
-    required this.label,
-    required this.value,
-    required this.onTap,
+class _SlotTile extends StatelessWidget {
+  const _SlotTile({
+    required this.slot,
+    required this.onEdit,
   });
 
-  final String label;
-  final String value;
-  final VoidCallback onTap;
+  final TimeSlot slot;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
+      onTap: onEdit,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest,
+          color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(value),
-                ],
+              child: Text(
+                slot.label,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
             const Icon(Icons.edit_outlined),
@@ -357,7 +458,7 @@ class _RangeTile extends StatelessWidget {
   }
 }
 
-enum _TimeRangeAction { cancel, clear, save }
+enum _SlotEditorAction { cancel, delete, save }
 
 String? _validateHour(String? value) {
   final v = (value ?? '').trim();
@@ -379,31 +480,13 @@ String? _validateHour(String? value) {
   return null;
 }
 
-int? _toMinutes(String hhmm) {
-  final value = hhmm.trim();
-  if (value.isEmpty) return null;
-
-  final parts = value.split(':');
-  if (parts.length != 2) return null;
-
-  final hh = int.tryParse(parts[0]);
-  final mm = int.tryParse(parts[1]);
-
-  if (hh == null || mm == null) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-
-  return hh * 60 + mm;
-}
-
-String? _validateTimeRange({
-  required String start,
-  required String end,
-  required String? otherStart,
-  required String? otherEnd,
-  required bool isMorning,
+String? _validateSlotAgainstDay({
+  required TimeSlot slot,
+  required List<TimeSlot> existingSlots,
+  int? editingIndex,
 }) {
-  final startMinutes = _toMinutes(start);
-  final endMinutes = _toMinutes(end);
+  final startMinutes = toMinutes(slot.start);
+  final endMinutes = toMinutes(slot.end);
 
   if (startMinutes == null || endMinutes == null) {
     return 'Heure invalide.';
@@ -413,23 +496,22 @@ String? _validateTimeRange({
     return 'L’heure de début doit être avant l’heure de fin.';
   }
 
-  final otherStartMinutes = _toMinutes(otherStart ?? '');
-  final otherEndMinutes = _toMinutes(otherEnd ?? '');
+  for (var i = 0; i < existingSlots.length; i++) {
+    if (editingIndex != null && i == editingIndex) {
+      continue;
+    }
 
-  if (otherStartMinutes != null && otherEndMinutes != null) {
-    final overlaps =
-        startMinutes < otherEndMinutes && endMinutes > otherStartMinutes;
+    final other = existingSlots[i];
+    final otherStart = toMinutes(other.start);
+    final otherEnd = toMinutes(other.end);
 
+    if (otherStart == null || otherEnd == null) {
+      continue;
+    }
+
+    final overlaps = startMinutes < otherEnd && endMinutes > otherStart;
     if (overlaps) {
-      return 'Cette plage chevauche l’autre plage horaire de la journée.';
-    }
-
-    if (isMorning && endMinutes > otherStartMinutes) {
-      return 'La plage du matin doit se terminer avant celle de l’après-midi.';
-    }
-
-    if (!isMorning && startMinutes < otherEndMinutes) {
-      return 'La plage de l’après-midi doit commencer après celle du matin.';
+      return 'Ce créneau chevauche un créneau existant.';
     }
   }
 
