@@ -29,13 +29,15 @@ class PharmacyWithDistance {
     required this.distanceKm,
   });
 
+  static const double nearbyRadiusKm = 5.0;
+
   final Pharmacy pharmacy;
 
   /// null => distance inconnue
   final double? distanceKm;
 
   bool get hasDistance => distanceKm != null;
-  bool get isNear => distanceKm != null && distanceKm! <= 2.0;
+  bool get isNear => distanceKm != null && distanceKm! <= nearbyRadiusKm;
 }
 
 @immutable

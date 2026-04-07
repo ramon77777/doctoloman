@@ -17,7 +17,7 @@ class AppointmentFlowPage extends ConsumerStatefulWidget {
     super.key,
     required this.item,
     required this.day,
-    required this.slot,
+    required this.slot, // heure de début uniquement, ex: "08:15"
     required this.isLoggedIn,
     required this.onRequireAuth,
   });
@@ -52,6 +52,8 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       DateTime(widget.day.year, widget.day.month, widget.day.day);
 
   int get _selectedReasonDurationMinutes => _reasonDurationMinutes(_reason);
+
+  String get _normalizedStartSlot => _normalizeStartSlot(widget.slot);
 
   bool get _isPhoneValid {
     final normalized = StringNormalizers.normalizePhoneCi(_phoneCtrl.text);
@@ -239,7 +241,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         city: widget.item.city,
         area: widget.item.area,
         day: _normalizedDay,
-        slot: widget.slot,
+        slot: _normalizedStartSlot,
         reason: _reason,
         patientFirstName: _firstNameCtrl.text.trim(),
         patientLastName: _lastNameCtrl.text.trim(),
@@ -336,7 +338,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       _SummaryStep(
         item: widget.item,
         day: _normalizedDay,
-        slot: widget.slot,
+        slot: _normalizedStartSlot,
         reason: _reason,
         durationMinutes: _selectedReasonDurationMinutes,
         firstName: _firstNameCtrl.text.trim(),
@@ -534,7 +536,9 @@ class _ReasonStep extends StatelessWidget {
                               size: 20,
                               color: selected == reason
                                   ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.onSurfaceVariant,
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -999,4 +1003,24 @@ String _formatDurationLabel(int minutes) {
 String _newId() {
   final now = DateTime.now();
   return 'apt_${now.microsecondsSinceEpoch}';
+}
+
+String _normalizeStartSlot(String slot) {
+  final normalized = slot.trim();
+  if (normalized.isEmpty) {
+    return '00:00';
+  }
+
+  final parts = normalized.split(':');
+  if (parts.length != 2) {
+    return '00:00';
+  }
+
+  final hour = int.tryParse(parts[0]) ?? 0;
+  final minute = int.tryParse(parts[1]) ?? 0;
+
+  final hh = hour.clamp(0, 23).toString().padLeft(2, '0');
+  final mm = minute.clamp(0, 59).toString().padLeft(2, '0');
+
+  return '$hh:$mm';
 }

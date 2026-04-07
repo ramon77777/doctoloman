@@ -32,7 +32,23 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
   }
 
   String _normalizeSlot(String value) {
-    return value.trim();
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+
+    final parts = trimmed.split(':');
+    if (parts.length != 2) return trimmed;
+
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+
+    if (hour == null || minute == null) {
+      return trimmed;
+    }
+
+    final hh = hour.clamp(0, 23).toString().padLeft(2, '0');
+    final mm = minute.clamp(0, 59).toString().padLeft(2, '0');
+
+    return '$hh:$mm';
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
@@ -61,8 +77,8 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
 
       final normalizedItem = _normalizeAppointment(item);
 
-      final samePractitioner = normalizedItem.practitionerId ==
-          normalizedCandidate.practitionerId;
+      final samePractitioner =
+          normalizedItem.practitionerId == normalizedCandidate.practitionerId;
       final sameDay = _isSameDay(normalizedItem.day, normalizedCandidate.day);
       final sameSlot = normalizedItem.slot == normalizedCandidate.slot;
       final isStillBlocking = !normalizedItem.isCancelledLike;
@@ -107,23 +123,18 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     }
 
     if (query.status != null) {
-      filtered = filtered
-          .where((item) => item.status == query.status)
-          .toList();
+      filtered = filtered.where((item) => item.status == query.status).toList();
     }
 
     if (query.from != null) {
       final from = query.from!;
-      filtered = filtered
-          .where((item) => !item.scheduledAt.isBefore(from))
-          .toList();
+      filtered =
+          filtered.where((item) => !item.scheduledAt.isBefore(from)).toList();
     }
 
     if (query.to != null) {
       final to = query.to!;
-      filtered = filtered
-          .where((item) => !item.scheduledAt.isAfter(to))
-          .toList();
+      filtered = filtered.where((item) => !item.scheduledAt.isAfter(to)).toList();
     }
 
     filtered.sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
@@ -172,11 +183,14 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     if (normalizedId.isEmpty) return;
 
     final items = await _loadItems();
-    final index = items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
+    final index =
+        items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
     if (index == -1) return;
 
     final updated = List<Appointment>.from(items);
-    updated[index] = updated[index].copyWith(status: status);
+    updated[index] = _normalizeAppointment(
+      updated[index].copyWith(status: status),
+    );
     await _persist(updated);
   }
 
@@ -190,7 +204,8 @@ class InMemoryAppointmentsRepository implements AppointmentsRepository {
     if (normalizedId.isEmpty) return null;
 
     final items = await _loadItems();
-    final index = items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
+    final index =
+        items.indexWhere((item) => _normalizeId(item.id) == normalizedId);
     if (index == -1) return null;
 
     final current = items[index];

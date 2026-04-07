@@ -29,6 +29,9 @@ class PractitionerDetailPage extends ConsumerStatefulWidget {
 class _PractitionerDetailPageState
     extends ConsumerState<PractitionerDetailPage> {
   late DateTime _selectedDay;
+
+  /// Slot sélectionné pour l'affichage utilisateur.
+  /// Format attendu : "08:15 - 08:30"
   String? _selectedSlot;
 
   @override
@@ -56,8 +59,8 @@ class _PractitionerDetailPageState
     return start.isEmpty ? null : start;
   }
 
-  DateTime? _slotToDateTime(DateTime day, String slot) {
-    final start = _extractSlotStart(slot);
+  DateTime? _slotToDateTime(DateTime day, String displaySlot) {
+    final start = _extractSlotStart(displaySlot);
     if (start == null) return null;
 
     final startMinutes = toMinutes(start);
@@ -72,8 +75,8 @@ class _PractitionerDetailPageState
     );
   }
 
-  bool _isSlotStillBookable(DateTime day, String slot) {
-    final slotDateTime = _slotToDateTime(day, slot);
+  bool _isSlotStillBookable(DateTime day, String displaySlot) {
+    final slotDateTime = _slotToDateTime(day, displaySlot);
     if (slotDateTime == null) return false;
     return slotDateTime.isAfter(DateTime.now());
   }
@@ -87,21 +90,33 @@ class _PractitionerDetailPageState
     return null;
   }
 
+  bool _isDisplaySlotTaken(
+    String displaySlot,
+    Set<String> takenStarts,
+  ) {
+    final start = _extractSlotStart(displaySlot);
+    if (start == null) return true;
+    return takenStarts.contains(start);
+  }
+
   List<String> _buildAvailableSlots({
     required List<String> rawSlots,
     required Set<String> takenSlots,
     required DateTime selectedDay,
   }) {
-    final normalizedTakenSlots = takenSlots.map((slot) => slot.trim()).toSet();
+    final normalizedTakenStarts = takenSlots.map((slot) => slot.trim()).toSet();
 
-    return rawSlots.where((slot) {
-      final normalizedSlot = slot.trim();
-
-      if (normalizedTakenSlots.contains(normalizedSlot)) {
+    return rawSlots.where((displaySlot) {
+      final normalizedDisplaySlot = displaySlot.trim();
+      if (normalizedDisplaySlot.isEmpty) {
         return false;
       }
 
-      return _isSlotStillBookable(selectedDay, normalizedSlot);
+      if (_isDisplaySlotTaken(normalizedDisplaySlot, normalizedTakenStarts)) {
+        return false;
+      }
+
+      return _isSlotStillBookable(selectedDay, normalizedDisplaySlot);
     }).toList();
   }
 
@@ -114,7 +129,7 @@ class _PractitionerDetailPageState
 
   void _pickSlot(String slot) {
     setState(() {
-      _selectedSlot = slot;
+      _selectedSlot = slot.trim();
     });
   }
 
@@ -154,16 +169,23 @@ class _PractitionerDetailPageState
   }
 
   Future<void> _onBook(SearchItem item) async {
-    final selectedSlot = _selectedSlot;
-    if (selectedSlot == null) {
+    final selectedDisplaySlot = _selectedSlot;
+    if (selectedDisplaySlot == null) {
       _showMessage('Choisis un créneau avant de continuer.');
       return;
     }
 
     final day = _normalizeDay(_selectedDay);
 
-    if (!_isSlotStillBookable(day, selectedSlot)) {
+    if (!_isSlotStillBookable(day, selectedDisplaySlot)) {
       _showMessage('Ce créneau n’est plus réservable. Choisis-en un autre.');
+      _clearSelectedSlot();
+      return;
+    }
+
+    final slotStart = _extractSlotStart(selectedDisplaySlot);
+    if (slotStart == null) {
+      _showMessage('Créneau invalide. Merci d’en choisir un autre.');
       _clearSelectedSlot();
       return;
     }
@@ -175,7 +197,7 @@ class _PractitionerDetailPageState
         builder: (_) => AppointmentFlowPage(
           item: item,
           day: day,
-          slot: selectedSlot,
+          slot: slotStart,
           isLoggedIn: isLoggedIn,
           onRequireAuth: _requireAuth,
         ),

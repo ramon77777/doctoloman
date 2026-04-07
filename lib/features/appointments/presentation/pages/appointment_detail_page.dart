@@ -435,6 +435,8 @@ class _RescheduleSelection {
   });
 
   final DateTime day;
+
+  /// Heure de début uniquement, ex: "08:15"
   final String slot;
 }
 
@@ -451,6 +453,8 @@ class _RescheduleDialog extends ConsumerStatefulWidget {
 
 class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
   late DateTime _selectedDay;
+
+  /// Slot affiché sélectionné, ex: "08:15 - 08:30"
   String? _selectedSlot;
 
   @override
@@ -473,6 +477,25 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
       }
     }
     return null;
+  }
+
+  String? _extractSlotStart(String displaySlot) {
+    final normalized = displaySlot.trim();
+    if (normalized.isEmpty) return null;
+
+    final parts = normalized.split(' - ');
+    if (parts.length != 2) return null;
+
+    final start = parts.first.trim();
+    if (start.isEmpty) return null;
+
+    return start;
+  }
+
+  bool _isSameAppointmentDisplaySlot(String displaySlot) {
+    final start = _extractSlotStart(displaySlot);
+    if (start == null) return false;
+    return start == widget.appointment.slot;
   }
 
   @override
@@ -540,18 +563,24 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
                 ),
                 error: (e, _) => Text('$e'),
                 data: (takenSlots) {
-                  final availableSlots = rawSlotResult.slots.where((slot) {
+                  final availableSlots = rawSlotResult.slots.where((displaySlot) {
                     final isCurrentSameDay = AppDateFormatters.isSameCalendarDay(
                       _selectedDay,
                       widget.appointment.day,
                     );
-                    final isCurrentSameSlot = slot == widget.appointment.slot;
+                    final isCurrentSameSlot =
+                        _isSameAppointmentDisplaySlot(displaySlot);
 
                     if (isCurrentSameDay && isCurrentSameSlot) {
                       return true;
                     }
 
-                    return !takenSlots.contains(slot);
+                    final start = _extractSlotStart(displaySlot);
+                    if (start == null) {
+                      return false;
+                    }
+
+                    return !takenSlots.contains(start);
                   }).toList();
 
                   if (!rawSlotResult.isOpen) {
@@ -570,6 +599,23 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
                         'Aucun créneau disponible pour cette date.',
                       ),
                     );
+                  }
+
+                  final initialSelected = availableSlots.any(
+                    (slot) => _isSameAppointmentDisplaySlot(slot),
+                  )
+                      ? availableSlots.firstWhere(
+                          (slot) => _isSameAppointmentDisplaySlot(slot),
+                        )
+                      : null;
+
+                  if (_selectedSlot == null && initialSelected != null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      setState(() {
+                        _selectedSlot = initialSelected;
+                      });
+                    });
                   }
 
                   return _CompactSlotsGrid(
@@ -596,10 +642,16 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
           onPressed: _selectedSlot == null
               ? null
               : () {
+                  final selectedDisplaySlot = _selectedSlot!;
+                  final start = _extractSlotStart(selectedDisplaySlot);
+                  if (start == null) {
+                    return;
+                  }
+
                   Navigator.of(context).pop(
                     _RescheduleSelection(
                       day: _selectedDay,
-                      slot: _selectedSlot!,
+                      slot: start,
                     ),
                   );
                 },
@@ -730,6 +782,7 @@ class _CompactSlotsGrid extends StatelessWidget {
             ),
             child: Text(
               slot,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: isSelected ? Colors.white : null,

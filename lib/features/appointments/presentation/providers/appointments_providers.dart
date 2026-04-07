@@ -56,7 +56,8 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
       final professionalName = _normalizeSearch(authUser.name);
 
       final filtered = allItems.where((appointment) {
-        final byId = _normalizeKey(appointment.practitionerId) == professionalId;
+        final byId =
+            _normalizeKey(appointment.practitionerId) == professionalId;
         final byName =
             _normalizeSearch(appointment.practitionerName) == professionalName;
         return byId || byName;
@@ -72,7 +73,8 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
     }
 
     final filtered = allItems.where((appointment) {
-      return _normalizePhoneKey(appointment.patientPhoneE164) == normalizedPhone;
+      return _normalizePhoneKey(appointment.patientPhoneE164) ==
+          normalizedPhone;
     }).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
@@ -98,7 +100,8 @@ final appointmentByIdProvider =
     final professionalId = _normalizeKey(authUser.id);
     final professionalName = _normalizeSearch(authUser.name);
 
-    final byId = _normalizeKey(appointment.practitionerId) == professionalId;
+    final byId =
+        _normalizeKey(appointment.practitionerId) == professionalId;
     final byName =
         _normalizeSearch(appointment.practitionerName) == professionalName;
 
@@ -292,7 +295,8 @@ class TakenSlotsQuery {
     if (identical(this, other)) return true;
 
     return other is TakenSlotsQuery &&
-        _normalizeKey(other.practitionerId) == _normalizeKey(practitionerId) &&
+        _normalizeKey(other.practitionerId) ==
+            _normalizeKey(practitionerId) &&
         other.normalizedDay == normalizedDay;
   }
 
@@ -303,8 +307,9 @@ class TakenSlotsQuery {
       );
 }
 
-/// Calcule les créneaux déjà pris pour un praticien donné et une journée donnée.
-/// On se base sur la source brute pour éviter toute incohérence d’affichage.
+/// Calcule les heures de début déjà prises pour un praticien donné et une journée donnée.
+/// Important : on renvoie ici des slots normalisés au format "HH:MM"
+/// car le stockage rendez-vous conserve uniquement l’heure de début.
 final takenSlotsForPractitionerDayProvider =
     FutureProvider.family<Set<String>, TakenSlotsQuery>((ref, query) async {
   final items = await ref.watch(allAppointmentsProvider.future);
@@ -565,7 +570,22 @@ bool _isSameCalendarDay(DateTime a, DateTime b) {
 }
 
 String _normalizeSlot(String value) {
-  return value.trim();
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+
+  final parts = trimmed.split(':');
+  if (parts.length != 2) return trimmed;
+
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+
+  if (hour == null || minute == null) {
+    return trimmed;
+  }
+
+  final hh = hour.clamp(0, 23).toString().padLeft(2, '0');
+  final mm = minute.clamp(0, 59).toString().padLeft(2, '0');
+  return '$hh:$mm';
 }
 
 String _normalizeKey(String value) {

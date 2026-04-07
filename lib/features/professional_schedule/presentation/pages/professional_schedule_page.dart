@@ -41,6 +41,13 @@ class _ProfessionalSchedulePageState
 
               if (!context.mounted) return;
 
+              final refreshedSchedule =
+                  ref.read(practitionerScheduleProvider(practitionerId));
+
+              setState(() {
+                _selectedWeekday = refreshedSchedule.first.weekday;
+              });
+
               final messenger = ScaffoldMessenger.of(context);
               messenger
                 ..hideCurrentSnackBar()
@@ -124,9 +131,6 @@ class _ProfessionalSchedulePageState
     final formKey = GlobalKey<FormState>();
     final messenger = ScaffoldMessenger.of(context);
     final controller = ref.read(professionalSchedulesMapProvider.notifier);
-    final currentDay = ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
-          (day) => day.weekday == weekday,
-        );
 
     try {
       final result = await showDialog<_SlotEditorAction>(
@@ -144,6 +148,7 @@ class _ProfessionalSchedulePageState
                   TextFormField(
                     controller: startCtrl,
                     keyboardType: TextInputType.datetime,
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Début',
                       hintText: '08:10',
@@ -154,6 +159,7 @@ class _ProfessionalSchedulePageState
                   TextFormField(
                     controller: endCtrl,
                     keyboardType: TextInputType.datetime,
+                    textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
                       labelText: 'Fin',
                       hintText: '08:18',
@@ -165,12 +171,14 @@ class _ProfessionalSchedulePageState
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(_SlotEditorAction.cancel),
+                onPressed: () =>
+                    Navigator.of(ctx).pop(_SlotEditorAction.cancel),
                 child: const Text('Fermer'),
               ),
               if (isEditing)
                 TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(_SlotEditorAction.delete),
+                  onPressed: () =>
+                      Navigator.of(ctx).pop(_SlotEditorAction.delete),
                   child: const Text('Supprimer'),
                 ),
               FilledButton(
@@ -204,14 +212,19 @@ class _ProfessionalSchedulePageState
 
       if (result != _SlotEditorAction.save) return;
 
-      final newSlot = TimeSlot(
-        start: startCtrl.text.trim(),
-        end: endCtrl.text.trim(),
+      final normalizedSlot = TimeSlot(
+        start: _normalizeHour(startCtrl.text),
+        end: _normalizeHour(endCtrl.text),
       );
 
+      final refreshedDay =
+          ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
+                (day) => day.weekday == weekday,
+              );
+
       final validationError = _validateSlotAgainstDay(
-        slot: newSlot,
-        existingSlots: currentDay.slots,
+        slot: normalizedSlot,
+        existingSlots: refreshedDay.slots,
         editingIndex: slotIndex,
       );
 
@@ -230,13 +243,13 @@ class _ProfessionalSchedulePageState
           practitionerId: practitionerId,
           weekday: weekday,
           slotIndex: slotIndex,
-          slot: newSlot,
+          slot: normalizedSlot,
         );
       } else {
         await controller.addSlot(
           practitionerId: practitionerId,
           weekday: weekday,
-          slot: newSlot,
+          slot: normalizedSlot,
         );
       }
 
@@ -478,6 +491,24 @@ String? _validateHour(String? value) {
   }
 
   return null;
+}
+
+String _normalizeHour(String value) {
+  final trimmed = value.trim();
+  final parts = trimmed.split(':');
+
+  if (parts.length != 2) {
+    return trimmed;
+  }
+
+  final hh = int.tryParse(parts[0]);
+  final mm = int.tryParse(parts[1]);
+
+  if (hh == null || mm == null) {
+    return trimmed;
+  }
+
+  return '${hh.clamp(0, 23).toString().padLeft(2, '0')}:${mm.clamp(0, 59).toString().padLeft(2, '0')}';
 }
 
 String? _validateSlotAgainstDay({

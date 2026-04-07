@@ -51,8 +51,10 @@ class PharmacyDetailPage extends ConsumerWidget {
       return;
     }
 
+    final destination = '$lat,$lng';
+
     final mapsUri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
     );
 
     final ok = await launchUrl(

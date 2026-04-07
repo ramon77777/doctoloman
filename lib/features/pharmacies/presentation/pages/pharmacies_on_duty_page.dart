@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-
 import '../../../../app/router/app_routes.dart';
 import '../../../../app/router/route_args.dart';
 import '../../domain/pharmacy.dart';
@@ -21,6 +20,8 @@ class PharmaciesPage extends ConsumerStatefulWidget {
 }
 
 class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
+  //static const double _nearbyRadiusKm = 5.0;
+
   bool _didInit = false;
   late final TextEditingController _qCtrl;
 
@@ -59,7 +60,7 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
               title: const Text('Activer “Autour de moi” ?'),
               content: const Text(
                 'Pour trier les pharmacies par proximité, Docto’Loman a besoin de votre localisation.\n\n'
-                '• Utilisation : uniquement pour le tri\n'
+                '• Utilisation : uniquement pour le tri et l’itinéraire\n'
                 '• Stockage : aucune localisation n’est enregistrée\n'
                 '• Vous pouvez désactiver à tout moment',
               ),
@@ -103,7 +104,7 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Impossible d’obtenir votre position. Vérifiez les autorisations.',
+            'Impossible d’obtenir votre position. Vérifiez les autorisations GPS.',
           ),
         ),
       );
@@ -193,8 +194,10 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
       return;
     }
 
+    final destination = '$lat,$lng';
+
     final mapsUri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
     );
 
     final ok = await launchUrl(
@@ -385,7 +388,7 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
                         const SizedBox(height: 16),
                         const _SectionTitle(
                           title: 'Pharmacies proches',
-                          subtitle: 'À moins de 2 km de votre position',
+                          subtitle: 'À moins de 5 km de votre position',
                           icon: Icons.near_me_outlined,
                         ),
                         const SizedBox(height: 10),
