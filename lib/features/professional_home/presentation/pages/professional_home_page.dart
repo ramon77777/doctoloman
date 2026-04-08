@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/router/app_routes.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
+import '../../../../core/models/app_user.dart';
 import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -60,8 +61,7 @@ class ProfessionalHomePage extends ConsumerWidget {
         ) ??
         false;
 
-    if (!confirmed) return;
-    if (!context.mounted) return;
+    if (!confirmed || !context.mounted) return;
 
     await ref.read(appointmentsControllerProvider).updateStatus(
           id: appointment.id,
@@ -70,13 +70,20 @@ class ProfessionalHomePage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(successMessage)),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(successMessage)),
+      );
   }
 
   Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(allAppointmentsProvider);
     ref.invalidate(appointmentsListProvider);
+    ref.invalidate(appointmentsStatsProvider);
+    ref.invalidate(nextUpcomingAppointmentProvider);
+    ref.invalidate(filteredAppointmentsProvider);
     await ref.read(appointmentsListProvider.future);
   }
 
@@ -134,7 +141,9 @@ class ProfessionalHomePage extends ConsumerWidget {
                   title: const Text('Profil professionnel'),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
-                    Navigator.of(context).pushNamed(AppRoutes.professionalProfile);
+                    Navigator.of(context).pushNamed(
+                      AppRoutes.professionalProfile,
+                    );
                   },
                 ),
                 ListTile(
@@ -142,7 +151,9 @@ class ProfessionalHomePage extends ConsumerWidget {
                   title: const Text('Mes disponibilités'),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
-                    Navigator.of(context).pushNamed(AppRoutes.professionalSchedule);
+                    Navigator.of(context).pushNamed(
+                      AppRoutes.professionalSchedule,
+                    );
                   },
                 ),
                 ListTile(
@@ -163,11 +174,31 @@ class ProfessionalHomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authControllerProvider);
     final appointmentsAsync = ref.watch(appointmentsListProvider);
     final profile = ref.watch(professionalProfileProvider);
     final schedule = ref.watch(practitionerScheduleProvider(profile.id));
 
     final openDaysCount = schedule.where((day) => day.isOpen).length;
+
+    if (!authState.isAuthenticated || !authState.isProfessional) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Espace professionnel'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Vous devez être connecté avec un compte professionnel pour accéder à cet espace.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -209,8 +240,9 @@ class ProfessionalHomePage extends ConsumerWidget {
                       ),
                       OutlinedButton(
                         onPressed: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalSchedule);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalSchedule,
+                          );
                         },
                         child: const Text('Horaires'),
                       ),
@@ -224,13 +256,15 @@ class ProfessionalHomePage extends ConsumerWidget {
                   final data = _buildHomeData(
                     items: items,
                     profile: profile,
+                    authUser: authState.user,
                   );
 
                   final nextPending =
                       data.pending.isNotEmpty ? data.pending.first : null;
-                  final nextToday = data.todayConfirmed.isNotEmpty
-                      ? data.todayConfirmed.first
-                      : null;
+                  final nextToday =
+                      data.todayConfirmed.isNotEmpty
+                          ? data.todayConfirmed.first
+                          : null;
 
                   return Column(
                     children: [
@@ -243,16 +277,19 @@ class ProfessionalHomePage extends ConsumerWidget {
                       const SizedBox(height: 16),
                       _QuickActionsCard(
                         onOpenAppointments: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalAppointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalAppointments,
+                          );
                         },
                         onOpenProfile: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalProfile);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalProfile,
+                          );
                         },
                         onOpenSchedule: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalSchedule);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalSchedule,
+                          );
                         },
                       ),
                       if (nextPending != null || nextToday != null) ...[
@@ -266,8 +303,9 @@ class ProfessionalHomePage extends ConsumerWidget {
                       _PendingRequestsCard(
                         items: data.pending.take(5).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalAppointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalAppointments,
+                          );
                         },
                         onConfirm: (appointment) => _confirmStatusChange(
                           context,
@@ -295,16 +333,18 @@ class ProfessionalHomePage extends ConsumerWidget {
                       _TodayAgendaCard(
                         items: data.todayConfirmed.take(5).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalAppointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalAppointments,
+                          );
                         },
                       ),
                       const SizedBox(height: 16),
                       _UpcomingAppointmentsCard(
                         items: data.confirmedUpcoming.take(5).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.professionalAppointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalAppointments,
+                          );
                         },
                       ),
                       const SizedBox(height: 16),
@@ -341,10 +381,15 @@ class ProfessionalHomePage extends ConsumerWidget {
 _ProfessionalHomeData _buildHomeData({
   required List<Appointment> items,
   required ProfessionalProfile profile,
+  required AppUser? authUser,
 }) {
-  final professionalItems = items
-      .where((item) => _belongsToProfessional(item, profile))
-      .toList();
+  final professionalItems = items.where((item) {
+    return _belongsToProfessional(
+      appointment: item,
+      profile: profile,
+      authUser: authUser,
+    );
+  }).toList();
 
   final pending = professionalItems
       .where((item) => item.status == AppointmentStatus.pending)
@@ -374,11 +419,11 @@ _ProfessionalHomeData _buildHomeData({
     ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
   return _ProfessionalHomeData(
-    all: professionalItems,
-    pending: pending,
-    confirmedUpcoming: confirmedUpcoming,
-    todayConfirmed: todayConfirmed,
-    closed: closed,
+    all: List<Appointment>.unmodifiable(professionalItems),
+    pending: List<Appointment>.unmodifiable(pending),
+    confirmedUpcoming: List<Appointment>.unmodifiable(confirmedUpcoming),
+    todayConfirmed: List<Appointment>.unmodifiable(todayConfirmed),
+    closed: List<Appointment>.unmodifiable(closed),
   );
 }
 
@@ -394,6 +439,11 @@ class _WelcomeHeader extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
 
+    final subtitleParts = <String>[
+      if (profile.specialty.trim().isNotEmpty) profile.specialty.trim(),
+      if (profile.structureName.trim().isNotEmpty) profile.structureName.trim(),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -403,7 +453,9 @@ class _WelcomeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '${profile.specialty} • ${profile.structureName}',
+          subtitleParts.isEmpty
+              ? 'Professionnel de santé'
+              : subtitleParts.join(' • '),
           style: textTheme.bodyMedium?.copyWith(
             color: cs.onSurfaceVariant,
           ),
@@ -700,24 +752,54 @@ class _PendingRequestsCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: () => onConfirm(item),
-                              icon: const Icon(Icons.check_circle_outline),
-                              label: const Text('Confirmer'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => onRefuse(item),
-                              icon: const Icon(Icons.event_busy_outlined),
-                              label: const Text('Refuser'),
-                            ),
-                          ),
-                        ],
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 360;
+
+                          if (compact) {
+                            return Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () => onConfirm(item),
+                                    icon: const Icon(Icons.check_circle_outline),
+                                    label: const Text('Confirmer'),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => onRefuse(item),
+                                    icon: const Icon(Icons.event_busy_outlined),
+                                    label: const Text('Refuser'),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: () => onConfirm(item),
+                                  icon: const Icon(Icons.check_circle_outline),
+                                  label: const Text('Confirmer'),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => onRefuse(item),
+                                  icon: const Icon(Icons.event_busy_outlined),
+                                  label: const Text('Refuser'),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -897,17 +979,37 @@ class _ActivitySummaryCard extends StatelessWidget {
   }
 }
 
-bool _belongsToProfessional(
-  Appointment appointment,
-  ProfessionalProfile profile,
-) {
-  final byId = appointment.practitionerId.trim() == profile.id.trim();
-  final byName =
-      _normalize(appointment.practitionerName) == _normalize(profile.displayName);
-  return byId || byName;
+bool _belongsToProfessional({
+  required Appointment appointment,
+  required ProfessionalProfile profile,
+  required AppUser? authUser,
+}) {
+  final appointmentPractitionerId = _normalizeKey(appointment.practitionerId);
+  final appointmentPractitionerName =
+      _normalizeSearch(appointment.practitionerName);
+
+  final profileId = _normalizeKey(profile.id);
+  final profileName = _normalizeSearch(profile.displayName);
+
+  final authId = _normalizeKey(authUser?.id ?? '');
+  final authName = _normalizeSearch(authUser?.name ?? '');
+
+  final byProfileId =
+      profileId.isNotEmpty && appointmentPractitionerId == profileId;
+  final byProfileName =
+      profileName.isNotEmpty && appointmentPractitionerName == profileName;
+  final byAuthId = authId.isNotEmpty && appointmentPractitionerId == authId;
+  final byAuthName =
+      authName.isNotEmpty && appointmentPractitionerName == authName;
+
+  return byProfileId || byProfileName || byAuthId || byAuthName;
 }
 
-String _normalize(String value) {
+String _normalizeKey(String value) {
+  return value.trim();
+}
+
+String _normalizeSearch(String value) {
   return value
       .trim()
       .toLowerCase()

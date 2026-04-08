@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/router/app_routes.dart';
 import '../../../../app/router/route_args.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
+import '../../../../core/models/app_user.dart';
 import '../../../../core/ui/info_widgets.dart';
 import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
 import '../../../appointments/presentation/widgets/appointment_badges.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 
@@ -77,7 +79,11 @@ class _ProfessionalAppointmentsPageState
   }
 
   Future<void> _refresh(WidgetRef ref) async {
+    ref.invalidate(allAppointmentsProvider);
     ref.invalidate(appointmentsListProvider);
+    ref.invalidate(appointmentsStatsProvider);
+    ref.invalidate(nextUpcomingAppointmentProvider);
+    ref.invalidate(filteredAppointmentsProvider);
     await ref.read(appointmentsListProvider.future);
   }
 
@@ -130,9 +136,29 @@ class _ProfessionalAppointmentsPageState
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
     final appointmentsAsync = ref.watch(appointmentsListProvider);
     final profile = ref.watch(professionalProfileProvider);
-    final query = _normalize(_searchCtrl.text);
+    final query = _normalizeSearch(_searchCtrl.text);
+
+    if (!authState.isAuthenticated || !authState.isProfessional) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Rendez-vous professionnels'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Vous devez être connecté avec un compte professionnel pour accéder à cette page.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -140,7 +166,7 @@ class _ProfessionalAppointmentsPageState
         actions: [
           IconButton(
             tooltip: 'Rafraîchir',
-            onPressed: () => ref.invalidate(appointmentsListProvider),
+            onPressed: () => _refresh(ref),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -152,11 +178,17 @@ class _ProfessionalAppointmentsPageState
           ),
           error: (error, _) => ErrorStateView(
             message: 'Impossible de charger les rendez-vous : $error',
-            onRetry: () => ref.invalidate(appointmentsListProvider),
+            onRetry: () => _refresh(ref),
           ),
           data: (items) {
             final professionalItems = items
-                .where((item) => _belongsToProfessional(item, profile))
+                .where(
+                  (item) => _belongsToProfessional(
+                    appointment: item,
+                    profile: profile,
+                    authUser: authState.user,
+                  ),
+                )
                 .where((item) => _matchesQuery(item, query))
                 .toList();
 
@@ -279,14 +311,14 @@ class _ProfessionalAppointmentsPageState
     ]..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     return _ProfessionalAppointmentsSections(
-      all: all,
-      today: today,
-      pending: pending,
-      upcomingConfirmed: upcomingConfirmed,
-      pastConfirmed: pastConfirmed,
-      declined: declined,
-      patientCancelled: patientCancelled,
-      closed: closed,
+      all: List<Appointment>.unmodifiable(all),
+      today: List<Appointment>.unmodifiable(today),
+      pending: List<Appointment>.unmodifiable(pending),
+      upcomingConfirmed: List<Appointment>.unmodifiable(upcomingConfirmed),
+      pastConfirmed: List<Appointment>.unmodifiable(pastConfirmed),
+      declined: List<Appointment>.unmodifiable(declined),
+      patientCancelled: List<Appointment>.unmodifiable(patientCancelled),
+      closed: List<Appointment>.unmodifiable(closed),
     );
   }
 
@@ -354,8 +386,7 @@ class _ProfessionalAppointmentsPageState
                         context,
                         ref,
                         appointment: item,
-                        newStatus:
-                            AppointmentStatus.declinedByProfessional,
+                        newStatus: AppointmentStatus.declinedByProfessional,
                         title: 'Refuser la demande',
                         message:
                             'Souhaitez-vous refuser cette demande pour ${item.patientFullName} ?',
@@ -370,7 +401,8 @@ class _ProfessionalAppointmentsPageState
     }
 
     addSection(
-      visible: showAll || selectedFilter == _ProfessionalAppointmentsFilter.today,
+      visible:
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.today,
       title: 'Aujourd’hui',
       subtitle: 'Vos consultations confirmées du jour',
       icon: Icons.today_outlined,
@@ -935,20 +967,35 @@ class _EmphasisBadge extends StatelessWidget {
   }
 }
 
-bool _belongsToProfessional(
-  Appointment appointment,
-  ProfessionalProfile profile,
-) {
-  final byId = appointment.practitionerId.trim() == profile.id.trim();
-  final byName =
-      _normalize(appointment.practitionerName) == _normalize(profile.displayName);
-  return byId || byName;
+bool _belongsToProfessional({
+  required Appointment appointment,
+  required ProfessionalProfile profile,
+  required AppUser? authUser,
+}) {
+  final appointmentPractitionerId = _normalizeKey(appointment.practitionerId);
+  final appointmentPractitionerName = _normalizeSearch(appointment.practitionerName);
+
+  final profileId = _normalizeKey(profile.id);
+  final profileName = _normalizeSearch(profile.displayName);
+
+  final authId = _normalizeKey(authUser?.id ?? '');
+  final authName = _normalizeSearch(authUser?.name ?? '');
+
+  final byProfileId =
+      profileId.isNotEmpty && appointmentPractitionerId == profileId;
+  final byProfileName =
+      profileName.isNotEmpty && appointmentPractitionerName == profileName;
+  final byAuthId = authId.isNotEmpty && appointmentPractitionerId == authId;
+  final byAuthName =
+      authName.isNotEmpty && appointmentPractitionerName == authName;
+
+  return byProfileId || byProfileName || byAuthId || byAuthName;
 }
 
 bool _matchesQuery(Appointment appointment, String query) {
   if (query.isEmpty) return true;
 
-  final haystack = _normalize(
+  final haystack = _normalizeSearch(
     '${appointment.patientFullName} '
     '${appointment.patientPhoneE164} '
     '${appointment.reason} '
@@ -985,7 +1032,11 @@ bool _isPatientCancelledAppointment(Appointment appointment) {
   return appointment.status == AppointmentStatus.cancelledByPatient;
 }
 
-String _normalize(String value) {
+String _normalizeKey(String value) {
+  return value.trim();
+}
+
+String _normalizeSearch(String value) {
   return value
       .trim()
       .toLowerCase()

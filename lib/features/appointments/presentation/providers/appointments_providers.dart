@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/app_user.dart';
 import '../../../../core/services/local_notifications_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../data/appointments_local_storage.dart';
 import '../../data/in_memory_appointments_repository.dart';
 import '../../domain/appointment.dart';
@@ -21,8 +22,6 @@ final appointmentsRepositoryProvider = Provider<AppointmentsRepository>(
   name: 'appointmentsRepositoryProvider',
 );
 
-/// Liste brute de tous les rendez-vous présents dans le stockage local.
-/// Sert notamment au calcul des créneaux déjà pris.
 final allAppointmentsProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final repo = ref.watch(appointmentsRepositoryProvider);
@@ -38,9 +37,6 @@ final allAppointmentsProvider = FutureProvider<List<Appointment>>(
   name: 'allAppointmentsProvider',
 );
 
-/// Liste adaptée à l'utilisateur connecté :
-/// - patient => ses rendez-vous
-/// - professionnel => ses rendez-vous en tant que praticien
 final appointmentsListProvider = FutureProvider<List<Appointment>>(
   (ref) async {
     final authState = ref.watch(authControllerProvider);
@@ -52,8 +48,11 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
     }
 
     if (authUser.role == AppUserRole.professional) {
-      final professionalId = _normalizeKey(authUser.id);
-      final professionalName = _normalizeSearch(authUser.name);
+      final professionalProfile = ref.watch(professionalProfileProvider);
+
+      final professionalId = _normalizeKey(professionalProfile.id);
+      final professionalName =
+          _normalizeSearch(professionalProfile.displayName);
 
       final filtered = allItems.where((appointment) {
         final byId =
@@ -97,11 +96,13 @@ final appointmentByIdProvider =
   if (appointment == null) return null;
 
   if (authUser.role == AppUserRole.professional) {
-    final professionalId = _normalizeKey(authUser.id);
-    final professionalName = _normalizeSearch(authUser.name);
+    final professionalProfile = ref.watch(professionalProfileProvider);
 
-    final byId =
-        _normalizeKey(appointment.practitionerId) == professionalId;
+    final professionalId = _normalizeKey(professionalProfile.id);
+    final professionalName =
+        _normalizeSearch(professionalProfile.displayName);
+
+    final byId = _normalizeKey(appointment.practitionerId) == professionalId;
     final byName =
         _normalizeSearch(appointment.practitionerName) == professionalName;
 
@@ -295,8 +296,7 @@ class TakenSlotsQuery {
     if (identical(this, other)) return true;
 
     return other is TakenSlotsQuery &&
-        _normalizeKey(other.practitionerId) ==
-            _normalizeKey(practitionerId) &&
+        _normalizeKey(other.practitionerId) == _normalizeKey(practitionerId) &&
         other.normalizedDay == normalizedDay;
   }
 
@@ -307,9 +307,6 @@ class TakenSlotsQuery {
       );
 }
 
-/// Calcule les heures de début déjà prises pour un praticien donné et une journée donnée.
-/// Important : on renvoie ici des slots normalisés au format "HH:MM"
-/// car le stockage rendez-vous conserve uniquement l’heure de début.
 final takenSlotsForPractitionerDayProvider =
     FutureProvider.family<Set<String>, TakenSlotsQuery>((ref, query) async {
   final items = await ref.watch(allAppointmentsProvider.future);
@@ -317,7 +314,8 @@ final takenSlotsForPractitionerDayProvider =
   final targetDay = query.normalizedDay;
 
   final takenSlots = items.where((appointment) {
-    if (_normalizeKey(appointment.practitionerId) != normalizedPractitionerId) {
+    if (_normalizeKey(appointment.practitionerId) !=
+        normalizedPractitionerId) {
       return false;
     }
 
@@ -570,22 +568,7 @@ bool _isSameCalendarDay(DateTime a, DateTime b) {
 }
 
 String _normalizeSlot(String value) {
-  final trimmed = value.trim();
-  if (trimmed.isEmpty) return '';
-
-  final parts = trimmed.split(':');
-  if (parts.length != 2) return trimmed;
-
-  final hour = int.tryParse(parts[0]);
-  final minute = int.tryParse(parts[1]);
-
-  if (hour == null || minute == null) {
-    return trimmed;
-  }
-
-  final hh = hour.clamp(0, 23).toString().padLeft(2, '0');
-  final mm = minute.clamp(0, 59).toString().padLeft(2, '0');
-  return '$hh:$mm';
+  return value.trim();
 }
 
 String _normalizeKey(String value) {

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/formatters/app_date_formatters.dart';
+import '../../../../core/models/app_user.dart';
 import '../../../../core/ui/info_widgets.dart';
 import '../../../../core/utils/string_normalizers.dart';
 import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/helpers/appointment_ui_helpers.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
 import '../../../appointments/presentation/widgets/appointment_badges.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 
@@ -98,8 +100,25 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
       );
     }
 
+    final authState = ref.watch(authControllerProvider);
     final appointmentAsync = ref.watch(appointmentByIdProvider(normalizedId));
     final profile = ref.watch(professionalProfileProvider);
+
+    if (!authState.isAuthenticated || !authState.isProfessional) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Détail rendez-vous pro'),
+        ),
+        body: const SafeArea(
+          child: EmptyStateView(
+            icon: Icons.lock_outline,
+            title: 'Accès réservé',
+            message:
+                'Vous devez être connecté avec un compte professionnel pour accéder à cette page.',
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -116,7 +135,11 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
               );
             }
 
-            if (!_belongsToProfessional(appointment, profile)) {
+            if (!_belongsToProfessional(
+              appointment: appointment,
+              profile: profile,
+              authUser: authState.user,
+            )) {
               return const EmptyStateView(
                 icon: Icons.lock_outline,
                 title: 'Accès non autorisé',
@@ -530,14 +553,29 @@ class _ProfessionalActionsSection extends StatelessWidget {
   }
 }
 
-bool _belongsToProfessional(
-  Appointment appointment,
-  ProfessionalProfile profile,
-) {
-  final byId = appointment.practitionerId.trim() == profile.id.trim();
-  final byName =
-      StringNormalizers.normalizeLoose(appointment.practitionerName) ==
-          StringNormalizers.normalizeLoose(profile.displayName);
+bool _belongsToProfessional({
+  required Appointment appointment,
+  required ProfessionalProfile profile,
+  required AppUser? authUser,
+}) {
+  final appointmentPractitionerId = appointment.practitionerId.trim();
+  final appointmentPractitionerName =
+      StringNormalizers.normalizeLoose(appointment.practitionerName);
 
-  return byId || byName;
+  final profileId = profile.id.trim();
+  final profileName = StringNormalizers.normalizeLoose(profile.displayName);
+
+  final authId = authUser?.id.trim() ?? '';
+  final authName = StringNormalizers.normalizeLoose(authUser?.name ?? '');
+
+  final byProfileId =
+      profileId.isNotEmpty && appointmentPractitionerId == profileId;
+  final byProfileName =
+      profileName.isNotEmpty && appointmentPractitionerName == profileName;
+  final byAuthId =
+      authId.isNotEmpty && appointmentPractitionerId == authId;
+  final byAuthName =
+      authName.isNotEmpty && appointmentPractitionerName == authName;
+
+  return byProfileId || byProfileName || byAuthId || byAuthName;
 }
