@@ -24,21 +24,67 @@ class AuthController extends StateNotifier<AuthState> {
   Future<void> loginMock({
     required String name,
     required String phone,
-    required AppUserRole role, // ✅ NEW
+    required AppUserRole role,
   }) async {
     state = AuthState.loading(user: state.user);
 
     final normalizedName = StringNormalizers.collapseSpaces(name);
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
-    final user = AppUser(
-      id: _buildStableUserId(normalizedPhone),
-      name: normalizedName.isEmpty ? 'Utilisateur' : normalizedName,
+    final existingUser = await _repository.findByPhone(normalizedPhone);
+    if (existingUser == null) {
+      state = AuthState.unauthenticated();
+      throw AuthLoginUserNotFoundException(phone: normalizedPhone);
+    }
+
+    if (existingUser.role != role) {
+      state = AuthState.unauthenticated();
+      throw AuthPhoneRoleMismatchException(
+        phone: normalizedPhone,
+        existingRole: existingUser.role,
+        attemptedRole: role,
+      );
+    }
+
+    final resolvedUser = existingUser.copyWith(
+      name: normalizedName.isEmpty ? existingUser.name : normalizedName,
       phone: normalizedPhone,
-      role: role, // ✅ NEW
     );
 
-    await _repository.login(user);
+    await _repository.login(resolvedUser);
+    state = AuthState.authenticated(resolvedUser);
+  }
+
+  Future<void> registerMock({
+    required String name,
+    required String phone,
+    required AppUserRole role,
+  }) async {
+    state = AuthState.loading(user: state.user);
+
+    final normalizedName = StringNormalizers.collapseSpaces(name);
+    final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
+
+    final existingUser = await _repository.findByPhone(normalizedPhone);
+    if (existingUser != null) {
+      state = AuthState.unauthenticated();
+      throw AuthPhoneAlreadyUsedException(
+        phone: normalizedPhone,
+        existingRole: existingUser.role,
+      );
+    }
+
+    final user = AppUser(
+      id: _buildStableUserId(
+        normalizedPhone: normalizedPhone,
+        role: role,
+      ),
+      name: normalizedName.isEmpty ? 'Utilisateur' : normalizedName,
+      phone: normalizedPhone,
+      role: role,
+    );
+
+    await _repository.register(user);
     state = AuthState.authenticated(user);
   }
 
@@ -55,7 +101,10 @@ class AuthController extends StateNotifier<AuthState> {
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
     final updatedUser = currentUser.copyWith(
-      id: _buildStableUserId(normalizedPhone),
+      id: _buildStableUserId(
+        normalizedPhone: normalizedPhone,
+        role: currentUser.role,
+      ),
       name: normalizedName.isEmpty ? currentUser.name : normalizedName,
       phone: normalizedPhone,
     );
@@ -77,10 +126,10 @@ class AuthController extends StateNotifier<AuthState> {
 
     final user = _repository.currentUser ??
         const AppUser(
-          id: 'local-user-2250000000000',
+          id: 'pat-2250000000000',
           name: 'Utilisateur',
           phone: '+2250000000000',
-          role: AppUserRole.patient, // ✅ fallback
+          role: AppUserRole.patient,
         );
 
     state = AuthState.authenticated(user);
@@ -92,11 +141,66 @@ class AuthController extends StateNotifier<AuthState> {
     state = AuthState.unauthenticated();
   }
 
-  String _buildStableUserId(String normalizedPhone) {
+  String _buildStableUserId({
+    required String normalizedPhone,
+    required AppUserRole role,
+  }) {
     final digitsOnly = normalizedPhone.replaceAll(RegExp(r'\D'), '');
+    final prefix = role == AppUserRole.professional ? 'pro' : 'pat';
+
     if (digitsOnly.isEmpty) {
-      return 'local-user';
+      return '$prefix-local-user';
     }
-    return 'local-user-$digitsOnly';
+
+    return '$prefix-$digitsOnly';
+  }
+}
+
+class AuthPhoneAlreadyUsedException implements Exception {
+  const AuthPhoneAlreadyUsedException({
+    required this.phone,
+    required this.existingRole,
+  });
+
+  final String phone;
+  final AppUserRole existingRole;
+
+  @override
+  String toString() {
+    return 'AuthPhoneAlreadyUsedException(phone: $phone, existingRole: $existingRole)';
+  }
+}
+
+class AuthLoginUserNotFoundException implements Exception {
+  const AuthLoginUserNotFoundException({
+    required this.phone,
+  });
+
+  final String phone;
+
+  @override
+  String toString() {
+    return 'AuthLoginUserNotFoundException(phone: $phone)';
+  }
+}
+
+class AuthPhoneRoleMismatchException implements Exception {
+  const AuthPhoneRoleMismatchException({
+    required this.phone,
+    required this.existingRole,
+    required this.attemptedRole,
+  });
+
+  final String phone;
+  final AppUserRole existingRole;
+  final AppUserRole attemptedRole;
+
+  @override
+  String toString() {
+    return 'AuthPhoneRoleMismatchException('
+        'phone: $phone, '
+        'existingRole: $existingRole, '
+        'attemptedRole: $attemptedRole'
+        ')';
   }
 }

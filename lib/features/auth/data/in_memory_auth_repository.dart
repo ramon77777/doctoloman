@@ -34,20 +34,28 @@ class InMemoryAuthRepository implements AuthRepository {
     }
 
     _currentUser ??= const AppUser(
-      id: 'local-user',
+      id: 'pat-2250000000000',
       name: 'Utilisateur',
       phone: '+2250000000000',
       role: AppUserRole.patient,
     );
 
     await _localStorage.saveSession(_currentUser!);
+    await _localStorage.saveUser(_currentUser!);
   }
 
   @override
   Future<void> login(AppUser user) async {
     _loggedIn = true;
     _currentUser = user;
+    await _localStorage.saveUser(user);
     await _localStorage.saveSession(user);
+  }
+
+  @override
+  Future<void> register(AppUser user) async {
+    await _localStorage.saveUser(user);
+    await login(user);
   }
 
   @override
@@ -55,6 +63,7 @@ class InMemoryAuthRepository implements AuthRepository {
     if (!_loggedIn) return;
 
     _currentUser = user;
+    await _localStorage.saveUser(user);
     await _localStorage.saveSession(user);
   }
 
@@ -63,5 +72,15 @@ class InMemoryAuthRepository implements AuthRepository {
     _loggedIn = false;
     _currentUser = null;
     await _localStorage.clearSession();
+  }
+
+  @override
+  Future<AppUser?> findByPhone(String phone) {
+    return _localStorage.findByPhone(phone);
+  }
+
+  @override
+  Future<List<AppUser>> getAllUsers() {
+    return _localStorage.getAllUsers();
   }
 }

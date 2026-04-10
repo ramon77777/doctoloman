@@ -7,27 +7,58 @@ class InMemoryPatientProfileRepository implements PatientProfileRepository {
 
   final PatientProfileLocalStorage _localStorage;
 
-  PatientProfile? _cache;
+  final Map<String, PatientProfile?> _cacheByPhone =
+      <String, PatientProfile?>{};
 
-  Future<PatientProfile?> _loadCachedOrStored() async {
-    _cache ??= _localStorage.read();
-    return _cache;
+  Future<PatientProfile?> _loadCachedOrStored(String phone) async {
+    final normalizedPhone = _normalizePhoneKey(phone);
+    if (normalizedPhone.isEmpty) {
+      return null;
+    }
+
+    if (_cacheByPhone.containsKey(normalizedPhone)) {
+      return _cacheByPhone[normalizedPhone];
+    }
+
+    final stored = _localStorage.readByPhone(phone);
+    _cacheByPhone[normalizedPhone] = stored;
+    return stored;
   }
 
   @override
-  Future<PatientProfile?> get() async {
-    return _loadCachedOrStored();
+  Future<PatientProfile?> get({String? phone}) async {
+    if (phone == null || phone.trim().isEmpty) {
+      return null;
+    }
+
+    return _loadCachedOrStored(phone);
   }
 
   @override
   Future<void> save(PatientProfile profile) async {
-    _cache = profile;
+    final normalizedPhone = _normalizePhoneKey(profile.phone);
+    if (normalizedPhone.isEmpty) {
+      return;
+    }
+
+    _cacheByPhone[normalizedPhone] = profile;
     await _localStorage.save(profile);
   }
 
   @override
-  Future<void> clear() async {
-    _cache = null;
-    await _localStorage.clear();
+  Future<void> clear({String? phone}) async {
+    if (phone == null || phone.trim().isEmpty) {
+      _cacheByPhone.clear();
+      await _localStorage.clear();
+      return;
+    }
+
+    final normalizedPhone = _normalizePhoneKey(phone);
+    _cacheByPhone.remove(normalizedPhone);
+    await _localStorage.clearByPhone(phone);
+  }
+
+  String _normalizePhoneKey(String value) {
+    return value.replaceAll(RegExp(r'\D'), '');
   }
 }

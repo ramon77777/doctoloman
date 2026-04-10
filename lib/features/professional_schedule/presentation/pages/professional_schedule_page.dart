@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/models/app_user.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../domain/professional_schedule.dart';
 import '../providers/professional_schedule_providers.dart';
@@ -19,9 +21,46 @@ class _ProfessionalSchedulePageState
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authControllerProvider);
+
+    if (!authState.isAuthenticated || !authState.isProfessional) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Disponibilités professionnelles'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Vous devez être connecté avec un compte professionnel pour accéder à cette page.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final profile = ref.watch(professionalProfileProvider);
-    final practitionerId = profile.id;
+    final practitionerId = profile.id.trim().isNotEmpty
+        ? profile.id.trim()
+        : _fallbackPractitionerId(authState.user);
+
     final schedule = ref.watch(practitionerScheduleProvider(practitionerId));
+
+    if (schedule.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Disponibilités professionnelles'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
 
     final selectedDay = schedule.firstWhere(
       (day) => day.weekday == _selectedWeekday,
@@ -39,23 +78,18 @@ class _ProfessionalSchedulePageState
                   .read(professionalSchedulesMapProvider.notifier)
                   .resetDefaults(practitionerId);
 
-              if (!context.mounted) return;
+              if (!mounted) return;
 
               final refreshedSchedule =
                   ref.read(practitionerScheduleProvider(practitionerId));
 
-              setState(() {
-                _selectedWeekday = refreshedSchedule.first.weekday;
-              });
+              if (refreshedSchedule.isNotEmpty) {
+                setState(() {
+                  _selectedWeekday = refreshedSchedule.first.weekday;
+                });
+              }
 
-              final messenger = ScaffoldMessenger.of(context);
-              messenger
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  const SnackBar(
-                    content: Text('Créneaux réinitialisés.'),
-                  ),
-                );
+              _showMessage('Créneaux réinitialisés.');
             },
             icon: const Icon(Icons.refresh),
           ),
@@ -129,7 +163,6 @@ class _ProfessionalSchedulePageState
     final startCtrl = TextEditingController(text: initialSlot?.start ?? '');
     final endCtrl = TextEditingController(text: initialSlot?.end ?? '');
     final formKey = GlobalKey<FormState>();
-    final messenger = ScaffoldMessenger.of(context);
     final controller = ref.read(professionalSchedulesMapProvider.notifier);
 
     try {
@@ -194,6 +227,12 @@ class _ProfessionalSchedulePageState
         },
       );
 
+      if (!mounted) return;
+
+      if (result == _SlotEditorAction.cancel || result == null) {
+        return;
+      }
+
       if (result == _SlotEditorAction.delete && isEditing) {
         await controller.removeSlot(
           practitionerId: practitionerId,
@@ -201,16 +240,10 @@ class _ProfessionalSchedulePageState
           slotIndex: slotIndex,
         );
 
-        if (!context.mounted) return;
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('Créneau supprimé.')),
-          );
+        if (!mounted) return;
+        _showMessage('Créneau supprimé.');
         return;
       }
-
-      if (result != _SlotEditorAction.save) return;
 
       final normalizedSlot = TimeSlot(
         start: _normalizeHour(startCtrl.text),
@@ -220,6 +253,12 @@ class _ProfessionalSchedulePageState
       final refreshedDay =
           ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
                 (day) => day.weekday == weekday,
+                orElse: () => DaySchedule(
+                  weekday: weekday,
+                  label: 'Jour',
+                  isOpen: true,
+                  slots: const [],
+                ),
               );
 
       final validationError = _validateSlotAgainstDay(
@@ -229,12 +268,7 @@ class _ProfessionalSchedulePageState
       );
 
       if (validationError != null) {
-        if (!context.mounted) return;
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(validationError)),
-          );
+        _showMessage(validationError);
         return;
       }
 
@@ -253,20 +287,42 @@ class _ProfessionalSchedulePageState
         );
       }
 
-      if (!context.mounted) return;
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              isEditing ? 'Créneau mis à jour.' : 'Créneau ajouté.',
-            ),
-          ),
-        );
+      if (!mounted) return;
+
+      setState(() {
+        _selectedWeekday = weekday;
+      });
+
+      _showMessage(isEditing ? 'Créneau mis à jour.' : 'Créneau ajouté.');
     } finally {
       startCtrl.dispose();
       endCtrl.dispose();
     }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+  }
+
+  String _fallbackPractitionerId(AppUser? user) {
+    final id = user?.id.trim() ?? '';
+    if (id.isNotEmpty) {
+      return id;
+    }
+
+    final digits = (user?.phone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.isNotEmpty) {
+      return 'pro-$digits';
+    }
+
+    return 'pro-local';
   }
 }
 

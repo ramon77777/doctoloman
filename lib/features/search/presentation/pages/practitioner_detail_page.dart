@@ -120,6 +120,31 @@ class _PractitionerDetailPageState
     }).toList();
   }
 
+  SearchItem _withPractitionerId(SearchItem item, String practitionerId) {
+    final normalizedId = practitionerId.trim();
+    if (normalizedId.isEmpty || normalizedId == item.id.trim()) {
+      return item;
+    }
+
+    return SearchItem(
+      id: normalizedId,
+      type: item.type,
+      displayName: item.displayName,
+      specialty: item.specialty,
+      city: item.city,
+      area: item.area,
+      address: item.address,
+      isVerified: item.isVerified,
+      isAvailableSoon: item.isAvailableSoon,
+      rating: item.rating,
+      reviewCount: item.reviewCount,
+      priceXofMin: item.priceXofMin,
+      priceXofMax: item.priceXofMax,
+      latitude: item.latitude,
+      longitude: item.longitude,
+    );
+  }
+
   void _pickDay(DateTime day) {
     setState(() {
       _selectedDay = _normalizeDay(day);
@@ -215,7 +240,11 @@ class _PractitionerDetailPageState
       profile: professionalProfile,
     );
 
-    final practitionerId = resolved.item.id;
+    final effectiveItem = resolved.usedProfileOverride
+        ? _withPractitionerId(resolved.item, professionalProfile.id)
+        : resolved.item;
+
+    final practitionerId = effectiveItem.id;
     final selectedDay = _normalizeDay(_selectedDay);
 
     final schedules = ref.watch(practitionerScheduleProvider(practitionerId));
@@ -257,7 +286,7 @@ class _PractitionerDetailPageState
             backgroundColor: AppColors.background,
             surfaceTintColor: AppColors.background,
             title: Text(
-              resolved.item.displayName,
+              effectiveItem.displayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -268,7 +297,7 @@ class _PractitionerDetailPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _PractitionerHeader(item: resolved.item),
+                  _PractitionerHeader(item: effectiveItem),
                   const SizedBox(height: 12),
                   const _SectionTitle(title: 'Informations'),
                   const SizedBox(height: 10),
@@ -289,7 +318,7 @@ class _PractitionerDetailPageState
                       _InfoRow(
                         icon: Icons.payments_outlined,
                         title: 'Tarif',
-                        value: resolved.item.priceLabel,
+                        value: effectiveItem.priceLabel,
                       ),
                       if (resolved.phone.trim().isNotEmpty) ...[
                         const SizedBox(height: 10),
@@ -370,7 +399,7 @@ class _PractitionerDetailPageState
                         selectedSlot: _selectedSlot,
                         isLoggedIn: isLoggedIn,
                         onSelectSlot: _pickSlot,
-                        onBook: canBook ? () => _onBook(resolved.item) : null,
+                        onBook: canBook ? () => _onBook(effectiveItem) : null,
                       );
                     },
                   ),

@@ -7,8 +7,7 @@ import '../../data/patient_profile_local_storage.dart';
 import '../../domain/patient_profile.dart';
 import '../../domain/patient_profile_repository.dart';
 
-final patientProfileLocalStorageProvider =
-    Provider<PatientProfileLocalStorage>(
+final patientProfileLocalStorageProvider = Provider<PatientProfileLocalStorage>(
   (ref) => PatientProfileLocalStorage(
     ref.watch(sharedPreferencesProvider),
   ),
@@ -28,37 +27,38 @@ final patientProfileProvider = FutureProvider<PatientProfile?>(
     final authState = ref.watch(authControllerProvider);
     final authUser = authState.user;
 
-    final stored = await repo.get();
-
     if (authUser == null) {
       return null;
     }
 
-    final authPhone = _normalizePhoneKey(authUser.phone);
+    final authPhone = authUser.phone.trim();
+    final authPhoneKey = _normalizePhoneKey(authPhone);
+
+    final stored = await repo.get(phone: authPhone);
 
     if (stored == null) {
       final createdProfile = PatientProfile(
         id: authUser.id,
         name: _effectiveAuthName(authUser.name),
-        phone: authUser.phone,
+        phone: authPhone,
       );
       await repo.save(createdProfile);
       return createdProfile;
     }
 
-    final storedPhone = _normalizePhoneKey(stored.phone);
+    final storedPhoneKey = _normalizePhoneKey(stored.phone);
 
-    final isSameUserById = stored.id.trim().isNotEmpty &&
-        stored.id.trim() == authUser.id.trim();
+    final isSameUserById =
+        stored.id.trim().isNotEmpty && stored.id.trim() == authUser.id.trim();
 
     final isSameUserByPhone =
-        storedPhone.isNotEmpty && storedPhone == authPhone;
+        storedPhoneKey.isNotEmpty && storedPhoneKey == authPhoneKey;
 
     if (!isSameUserById && !isSameUserByPhone) {
       final createdProfile = PatientProfile(
         id: authUser.id,
         name: _effectiveAuthName(authUser.name),
-        phone: authUser.phone,
+        phone: authPhone,
       );
       await repo.save(createdProfile);
       return createdProfile;
@@ -106,7 +106,8 @@ class PatientProfileController {
   }
 
   Future<void> clear() async {
-    await _repo.clear();
+    final authUser = _ref.read(authControllerProvider).user;
+    await _repo.clear(phone: authUser?.phone);
     _invalidateProfile();
   }
 
@@ -128,7 +129,8 @@ PatientProfile _syncProfileWithAuth({
   final shouldKeepStoredName =
       _isPlaceholderName(authName) && storedName.isNotEmpty;
 
-  final nextName = shouldKeepStoredName ? storedName : _effectiveAuthName(authName);
+  final nextName =
+      shouldKeepStoredName ? storedName : _effectiveAuthName(authName);
 
   final needsIdSync = storedProfile.id != nextId;
   final needsNameSync = storedProfile.name != nextName;
@@ -163,7 +165,8 @@ bool _samePatientProfile(PatientProfile a, PatientProfile b) {
 }
 
 String _normalizePhoneKey(String value) {
-  return StringNormalizers.normalizePhoneCi(value).replaceAll(RegExp(r'\D'), '');
+  return StringNormalizers.normalizePhoneCi(value)
+      .replaceAll(RegExp(r'\D'), '');
 }
 
 bool _isPlaceholderName(String value) {

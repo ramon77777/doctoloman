@@ -9,7 +9,13 @@ abstract class AuthRepository {
 
   Future<void> login(AppUser user);
 
+  Future<void> register(AppUser user);
+
   Future<void> updateUser(AppUser user);
 
   Future<void> logout();
+
+  Future<AppUser?> findByPhone(String phone);
+
+  Future<List<AppUser>> getAllUsers();
 }

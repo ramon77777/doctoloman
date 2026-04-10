@@ -52,7 +52,17 @@ class AppRouter {
 
   static Route<dynamic> _buildLoginPhoneRoute(RouteSettings settings) {
     final args = settings.arguments;
-    final isSignup = args is LoginPhoneArgs ? args.isSignup : false;
+
+    bool isSignup = false;
+
+    if (args is LoginPhoneArgs) {
+      isSignup = args.isSignup;
+    } else if (args is Map<String, dynamic>) {
+      final raw = args['isSignup'];
+      if (raw is bool) {
+        isSignup = raw;
+      }
+    }
 
     return fadeRoute(
       LoginPhonePage(isSignup: isSignup),

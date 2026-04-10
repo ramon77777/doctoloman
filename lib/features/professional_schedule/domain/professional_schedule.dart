@@ -15,26 +15,26 @@ class TimeSlot {
     String? end,
   }) {
     return TimeSlot(
-      start: start ?? this.start,
-      end: end ?? this.end,
+      start: _normalizeHour(start ?? this.start),
+      end: _normalizeHour(end ?? this.end),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'start': start,
-      'end': end,
+      'start': _normalizeHour(start),
+      'end': _normalizeHour(end),
     };
   }
 
   factory TimeSlot.fromMap(Map<String, dynamic> map) {
     return TimeSlot(
-      start: _readString(map, 'start', ''),
-      end: _readString(map, 'end', ''),
+      start: _normalizeHour(_readString(map, 'start', '')),
+      end: _normalizeHour(_readString(map, 'end', '')),
     );
   }
 
-  String get label => '$start - $end';
+  String get label => '${_normalizeHour(start)} - ${_normalizeHour(end)}';
 
   static String _readString(
     Map<String, dynamic> map,
@@ -47,6 +47,21 @@ class TimeSlot {
     }
     return fallback;
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is TimeSlot &&
+        _normalizeHour(other.start) == _normalizeHour(start) &&
+        _normalizeHour(other.end) == _normalizeHour(end);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        _normalizeHour(start),
+        _normalizeHour(end),
+      );
 }
 
 @immutable
@@ -70,20 +85,26 @@ class DaySchedule {
     List<TimeSlot>? slots,
     bool clearSlots = false,
   }) {
+    final nextSlots = clearSlots
+        ? const <TimeSlot>[]
+        : (slots ?? this.slots);
+
     return DaySchedule(
-      weekday: weekday ?? this.weekday,
-      label: label ?? this.label,
+      weekday: _normalizeWeekday(weekday ?? this.weekday),
+      label: _normalizeLabel(label ?? this.label),
       isOpen: isOpen ?? this.isOpen,
-      slots: clearSlots ? const <TimeSlot>[] : (slots ?? this.slots),
+      slots: List<TimeSlot>.unmodifiable(
+        sortTimeSlots(nextSlots),
+      ),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'weekday': weekday,
-      'label': label,
+      'weekday': _normalizeWeekday(weekday),
+      'label': _normalizeLabel(label),
       'isOpen': isOpen,
-      'slots': slots.map((slot) => slot.toMap()).toList(),
+      'slots': sortTimeSlots(slots).map((slot) => slot.toMap()).toList(),
     };
   }
 
@@ -94,8 +115,21 @@ class DaySchedule {
     if (rawSlots is List) {
       for (final entry in rawSlots) {
         if (entry is! Map) continue;
+
         try {
-          parsedSlots.add(TimeSlot.fromMap(Map<String, dynamic>.from(entry)));
+          final slot = TimeSlot.fromMap(Map<String, dynamic>.from(entry));
+          final startMinutes = toMinutes(slot.start);
+          final endMinutes = toMinutes(slot.end);
+
+          if (startMinutes == null || endMinutes == null) {
+            continue;
+          }
+
+          if (startMinutes >= endMinutes) {
+            continue;
+          }
+
+          parsedSlots.add(slot);
         } catch (_) {
           // Ignore uniquement l'entrée invalide.
         }
@@ -103,8 +137,8 @@ class DaySchedule {
     }
 
     return DaySchedule(
-      weekday: _readInt(map, 'weekday', 1),
-      label: _readString(map, 'label', 'Jour'),
+      weekday: _normalizeWeekday(_readInt(map, 'weekday', 1)),
+      label: _normalizeLabel(_readString(map, 'label', 'Jour')),
       isOpen: _readBool(map, 'isOpen', false),
       slots: List<TimeSlot>.unmodifiable(_sortSlots(parsedSlots)),
     );
@@ -139,6 +173,36 @@ class DaySchedule {
     }
     return fallback;
   }
+
+  static int _normalizeWeekday(int value) {
+    if (value < 1) return 1;
+    if (value > 7) return 7;
+    return value;
+  }
+
+  static String _normalizeLabel(String value) {
+    final normalized = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return normalized.isEmpty ? 'Jour' : normalized;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is DaySchedule &&
+        other.weekday == weekday &&
+        other.label == label &&
+        other.isOpen == isOpen &&
+        listEquals(other.slots, slots);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        weekday,
+        label,
+        isOpen,
+        Object.hashAll(slots),
+      );
 }
 
 List<TimeSlot> sortTimeSlots(List<TimeSlot> input) {
@@ -146,8 +210,25 @@ List<TimeSlot> sortTimeSlots(List<TimeSlot> input) {
 }
 
 List<TimeSlot> _sortSlots(List<TimeSlot> input) {
-  final sorted = [...input];
-  sorted.sort((a, b) {
+  final normalized = <TimeSlot>[];
+
+  for (final slot in input) {
+    final normalizedSlot = slot.copyWith();
+    final startMinutes = toMinutes(normalizedSlot.start);
+    final endMinutes = toMinutes(normalizedSlot.end);
+
+    if (startMinutes == null || endMinutes == null) {
+      continue;
+    }
+
+    if (startMinutes >= endMinutes) {
+      continue;
+    }
+
+    normalized.add(normalizedSlot);
+  }
+
+  normalized.sort((a, b) {
     final aStart = toMinutes(a.start) ?? 0;
     final bStart = toMinutes(b.start) ?? 0;
     if (aStart != bStart) return aStart.compareTo(bStart);
@@ -156,7 +237,17 @@ List<TimeSlot> _sortSlots(List<TimeSlot> input) {
     final bEnd = toMinutes(b.end) ?? 0;
     return aEnd.compareTo(bEnd);
   });
-  return sorted;
+
+  final deduplicated = <TimeSlot>[];
+  final seen = <String>{};
+
+  for (final slot in normalized) {
+    final key = '${slot.start}-${slot.end}';
+    if (!seen.add(key)) continue;
+    deduplicated.add(slot);
+  }
+
+  return deduplicated;
 }
 
 int? toMinutes(String hhmm) {
@@ -179,4 +270,26 @@ String formatMinutes(int totalMinutes) {
   final hh = (totalMinutes ~/ 60).toString().padLeft(2, '0');
   final mm = (totalMinutes % 60).toString().padLeft(2, '0');
   return '$hh:$mm';
+}
+
+String _normalizeHour(String value) {
+  final trimmed = value.trim();
+  final parts = trimmed.split(':');
+
+  if (parts.length != 2) {
+    return trimmed;
+  }
+
+  final hh = int.tryParse(parts[0]);
+  final mm = int.tryParse(parts[1]);
+
+  if (hh == null || mm == null) {
+    return trimmed;
+  }
+
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    return trimmed;
+  }
+
+  return '${hh.toString().padLeft(2, '0')}:${mm.toString().padLeft(2, '0')}';
 }

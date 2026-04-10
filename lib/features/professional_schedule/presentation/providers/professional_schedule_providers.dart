@@ -3,35 +3,51 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../core/models/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/professional_schedule.dart';
 
-const _professionalSchedulesStorageKey = 'professional_schedules_v2';
+const _professionalSchedulesStorageKey = 'professional_schedules_v3';
 const _defaultPractitionerId = 'pro_001';
 
 final practitionerScheduleProvider =
     Provider.family<List<DaySchedule>, String>((ref, practitionerId) {
   final schedulesByPractitioner = ref.watch(professionalSchedulesMapProvider);
-  return schedulesByPractitioner[practitionerId] ??
-      ProfessionalScheduleController.defaultSchedule;
+  final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+
+  final resolved = schedulesByPractitioner[normalizedPractitionerId];
+  if (resolved != null && resolved.isNotEmpty) {
+    return _cloneSchedule(resolved);
+  }
+
+  return _cloneSchedule(ProfessionalScheduleController.defaultSchedule);
 }, name: 'practitionerScheduleProvider');
 
 final professionalSchedulesMapProvider = StateNotifierProvider<
     ProfessionalScheduleController, Map<String, List<DaySchedule>>>(
   (ref) {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return ProfessionalScheduleController(prefs);
+    final authUser = ref.watch(authControllerProvider).user;
+
+    return ProfessionalScheduleController(
+      prefs,
+      authUser: authUser,
+    );
   },
   name: 'professionalSchedulesMapProvider',
 );
 
 class ProfessionalScheduleController
     extends StateNotifier<Map<String, List<DaySchedule>>> {
-  ProfessionalScheduleController(this._prefs) : super(_loadInitialState(_prefs));
+  ProfessionalScheduleController(
+    this._prefs, {
+    required AppUser? authUser,
+  }) : super(_loadInitialState(_prefs, authUser: authUser));
 
   final SharedPreferences _prefs;
 
-  static final List<DaySchedule> defaultSchedule = List<DaySchedule>.unmodifiable(
+  static final List<DaySchedule> defaultSchedule =
+      List<DaySchedule>.unmodifiable(
     const [
       DaySchedule(
         weekday: 1,
@@ -106,52 +122,59 @@ class ProfessionalScheduleController
   );
 
   static Map<String, List<DaySchedule>> _loadInitialState(
-    SharedPreferences prefs,
-  ) {
+    SharedPreferences prefs, {
+    required AppUser? authUser,
+  }) {
     final raw = prefs.getString(_professionalSchedulesStorageKey);
-    if (raw == null || raw.trim().isEmpty) {
-      return _defaultState();
+    final result = <String, List<DaySchedule>>{};
+
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          decoded.forEach((key, value) {
+            final normalizedPractitionerId = _normalizePractitionerId(key);
+            if (normalizedPractitionerId.isEmpty) return;
+            if (value is! List) return;
+
+            final days = <DaySchedule>[];
+
+            for (final entry in value) {
+              if (entry is! Map) continue;
+
+              try {
+                final day = DaySchedule.fromMap(
+                  Map<String, dynamic>.from(entry),
+                );
+                days.add(day);
+              } catch (_) {
+                // Ignore uniquement l'entrée invalide.
+              }
+            }
+
+            if (days.isNotEmpty) {
+              result[normalizedPractitionerId] = _sortAndNormalize(days);
+            }
+          });
+        }
+      } catch (_) {
+        // Ignore et retombe sur l'état par défaut.
+      }
     }
 
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        return _defaultState();
-      }
-
-      final result = <String, List<DaySchedule>>{};
-
-      decoded.forEach((key, value) {
-        final normalizedPractitionerId = _normalizePractitionerId(key);
-        if (normalizedPractitionerId.isEmpty) return;
-        if (value is! List) return;
-
-        final days = <DaySchedule>[];
-
-        for (final entry in value) {
-          if (entry is! Map) continue;
-
-          try {
-            final day = DaySchedule.fromMap(Map<String, dynamic>.from(entry));
-            days.add(day);
-          } catch (_) {
-            // Ignore uniquement l'entrée invalide.
-          }
-        }
-
-        if (days.isNotEmpty) {
-          result[normalizedPractitionerId] = _sortAndNormalize(days);
-        }
-      });
-
-      if (!result.containsKey(_defaultPractitionerId)) {
-        result[_defaultPractitionerId] = _cloneSchedule(defaultSchedule);
-      }
-
-      return Map<String, List<DaySchedule>>.unmodifiable(result);
-    } catch (_) {
-      return _defaultState();
+    if (!result.containsKey(_defaultPractitionerId)) {
+      result[_defaultPractitionerId] = _cloneSchedule(defaultSchedule);
     }
+
+    final currentProfessionalId = _resolveCurrentProfessionalId(authUser);
+    if (currentProfessionalId != null && currentProfessionalId.isNotEmpty) {
+      result.putIfAbsent(
+        currentProfessionalId,
+        () => _cloneSchedule(defaultSchedule),
+      );
+    }
+
+    return Map<String, List<DaySchedule>>.unmodifiable(result);
   }
 
   List<DaySchedule> scheduleFor(String practitionerId) {
@@ -161,7 +184,7 @@ class ProfessionalScheduleController
     }
 
     final existing = state[normalizedPractitionerId];
-    if (existing != null) {
+    if (existing != null && existing.isNotEmpty) {
       return _cloneSchedule(existing);
     }
 
@@ -199,7 +222,7 @@ class ProfessionalScheduleController
         if (day.weekday == weekday)
           day.copyWith(
             isOpen: true,
-            slots: sortTimeSlots([...day.slots, slot]),
+            slots: [...day.slots, slot],
           )
         else
           day,
@@ -211,7 +234,7 @@ class ProfessionalScheduleController
   Future<void> updateSlot({
     required String practitionerId,
     required int weekday,
-    required int slotIndex,
+    required int? slotIndex,
     required TimeSlot slot,
   }) async {
     final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
@@ -234,7 +257,7 @@ class ProfessionalScheduleController
   Future<void> removeSlot({
     required String practitionerId,
     required int weekday,
-    required int slotIndex,
+    required int? slotIndex,
   }) async {
     final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
     final current = scheduleFor(normalizedPractitionerId);
@@ -288,28 +311,17 @@ class ProfessionalScheduleController
     );
   }
 
-  static Map<String, List<DaySchedule>> _defaultState() {
-    return Map<String, List<DaySchedule>>.unmodifiable({
-      _defaultPractitionerId: _cloneSchedule(defaultSchedule),
-    });
-  }
+  static String? _resolveCurrentProfessionalId(AppUser? authUser) {
+    if (authUser == null || !authUser.isProfessional) {
+      return null;
+    }
 
-  static String _normalizePractitionerId(String value) {
-    return value.trim();
-  }
+    final normalizedId = _normalizePractitionerId(authUser.id);
+    if (normalizedId.isNotEmpty) {
+      return normalizedId;
+    }
 
-  static List<DaySchedule> _cloneSchedule(List<DaySchedule> input) {
-    return List<DaySchedule>.unmodifiable(
-      input
-          .map(
-            (day) => day.copyWith(
-              slots: List<TimeSlot>.unmodifiable(
-                day.slots.map((slot) => slot.copyWith()).toList(),
-              ),
-            ),
-          )
-          .toList(),
-    );
+    return null;
   }
 
   static List<DaySchedule> _sortAndNormalize(List<DaySchedule> input) {
@@ -330,10 +342,10 @@ class ProfessionalScheduleController
 
   static List<TimeSlot> _replaceSlot(
     List<TimeSlot> slots,
-    int slotIndex,
+    int? slotIndex,
     TimeSlot slot,
   ) {
-    if (slotIndex < 0 || slotIndex >= slots.length) {
+    if (slotIndex == null || slotIndex < 0 || slotIndex >= slots.length) {
       return sortTimeSlots(slots);
     }
 
@@ -344,13 +356,31 @@ class ProfessionalScheduleController
 
   static List<TimeSlot> _removeSlot(
     List<TimeSlot> slots,
-    int slotIndex,
+    int? slotIndex,
   ) {
-    if (slotIndex < 0 || slotIndex >= slots.length) {
+    if (slotIndex == null || slotIndex < 0 || slotIndex >= slots.length) {
       return sortTimeSlots(slots);
     }
 
     final updated = [...slots]..removeAt(slotIndex);
     return sortTimeSlots(updated);
   }
+}
+
+String _normalizePractitionerId(String value) {
+  return value.trim();
+}
+
+List<DaySchedule> _cloneSchedule(List<DaySchedule> input) {
+  return List<DaySchedule>.unmodifiable(
+    input
+        .map(
+          (day) => day.copyWith(
+            slots: List<TimeSlot>.unmodifiable(
+              day.slots.map((slot) => slot.copyWith()).toList(),
+            ),
+          ),
+        )
+        .toList(),
+  );
 }

@@ -187,21 +187,11 @@ final searchFiltersProvider = StateNotifierProvider.family<
   name: 'searchFiltersProvider',
 );
 
-List<SearchItem> _replaceSearchItemById({
-  required List<SearchItem> items,
-  required String id,
-  required SearchItem replacement,
-}) {
-  return [
-    for (final item in items) item.id == id ? replacement : item,
-  ];
-}
-
 final searchResultsProvider =
     FutureProvider.family<List<SearchItem>, SearchSeed>((ref, seed) async {
   final repo = ref.watch(searchRepositoryProvider);
   final filters = ref.watch(searchFiltersProvider(seed));
-  final professionalProfile = ref.watch(professionalProfileProvider);
+  final allProfessionalProfiles = ref.watch(allProfessionalProfilesProvider);
 
   const double? userLat = null;
   const double? userLng = null;
@@ -220,17 +210,26 @@ final searchResultsProvider =
     ),
   );
 
-  final items = result.items;
-  final mergedItems = _mergeDynamicProfessionalItem(
-    items: items,
-    professionalProfile: professionalProfile,
+  final mergedItems = _mergeDynamicProfessionalItems(
+    items: result.items,
+    professionalProfiles: allProfessionalProfiles,
+    filters: filters,
   );
 
-  return List<SearchItem>.unmodifiable(mergedItems);
+  final sorted = [...mergedItems]
+    ..sort(
+      (a, b) => _compareSearchItemsForUi(
+        a: a,
+        b: b,
+        sortMode: filters.sortMode,
+      ),
+    );
+
+  return List<SearchItem>.unmodifiable(sorted);
 }, name: 'searchResultsProvider');
 
 final availableSearchCitiesProvider = Provider<List<String>>((ref) {
-  final professionalProfile = ref.watch(professionalProfileProvider);
+  final allProfessionalProfiles = ref.watch(allProfessionalProfilesProvider);
 
   final cities = <String>{};
 
@@ -241,9 +240,11 @@ final availableSearchCitiesProvider = Provider<List<String>>((ref) {
     }
   }
 
-  final dynamicCity = _normalizeOptionalFilterValue(professionalProfile.city);
-  if (dynamicCity != null) {
-    cities.add(dynamicCity);
+  for (final profile in allProfessionalProfiles) {
+    final dynamicCity = _normalizeOptionalFilterValue(profile.city);
+    if (dynamicCity != null) {
+      cities.add(dynamicCity);
+    }
   }
 
   final sorted = cities.toList()
@@ -267,33 +268,170 @@ SearchSortMode _mapSortMode(SortMode mode) {
   }
 }
 
-List<SearchItem> _mergeDynamicProfessionalItem({
+List<SearchItem> _mergeDynamicProfessionalItems({
   required List<SearchItem> items,
-  required ProfessionalProfile professionalProfile,
+  required List<ProfessionalProfile> professionalProfiles,
+  required SearchFilters filters,
 }) {
-  final baseProfessional = items.cast<SearchItem?>().firstWhere(
-        (item) => item?.id == professionalProfile.id,
-        orElse: () => null,
-      );
+  final mergedById = <String, SearchItem>{
+    for (final item in items) item.id: item,
+  };
 
-  if (baseProfessional == null) {
-    return items;
+  for (final profile in professionalProfiles) {
+    final fallbackBaseItem = _buildSearchItemFromProfessionalProfile(profile);
+
+    final existingBaseItem = mergedById[profile.id] ?? fallbackBaseItem;
+
+    final resolved = resolvePractitionerData(
+      baseItem: existingBaseItem,
+      profile: profile,
+    );
+
+    final candidate = resolved.item;
+
+    if (!_matchesSearchFilters(candidate, filters)) {
+      if (mergedById.containsKey(profile.id) &&
+          !_matchesSearchFilters(mergedById[profile.id]!, filters)) {
+        mergedById.remove(profile.id);
+      }
+      continue;
+    }
+
+    mergedById[profile.id] = candidate;
   }
 
-  final resolved = resolvePractitionerData(
-    baseItem: baseProfessional,
-    profile: professionalProfile,
+  return mergedById.values.toList();
+}
+
+SearchItem _buildSearchItemFromProfessionalProfile(ProfessionalProfile profile) {
+  final (minPrice, maxPrice) =
+      extractPriceRange(profile.consultationFeeLabel);
+
+  return SearchItem(
+    id: profile.id,
+    type: SearchItemType.doctor,
+    displayName: profile.displayName.trim().isEmpty
+        ? 'Professionnel de santé'
+        : profile.displayName,
+    specialty: profile.specialty.trim().isEmpty
+        ? 'Professionnel de santé'
+        : profile.specialty,
+    city: profile.city,
+    area: profile.area,
+    address: profile.address,
+    rating: 0,
+    reviewCount: 0,
+    isVerified: profile.isVerified,
+    isAvailableSoon: true,
+    priceXofMin: minPrice,
+    priceXofMax: maxPrice,
+  );
+}
+
+bool _matchesSearchFilters(SearchItem item, SearchFilters filters) {
+  final normalizedWhat = _normalize(item.displayName);
+  final normalizedSpecialty = _normalize(item.specialty);
+  final normalizedWhere = _normalize(
+    '${item.city} ${item.area} ${item.address} ${item.locationLabel}',
   );
 
-  if (!resolved.usedProfileOverride) {
-    return items;
+  final queryWhat = _normalize(filters.what);
+  final queryWhere = _normalize(filters.where);
+  final queryCity = _normalize(filters.city ?? '');
+
+  final matchesWhat = queryWhat.isEmpty ||
+      normalizedWhat.contains(queryWhat) ||
+      normalizedSpecialty.contains(queryWhat);
+
+  final matchesWhere = queryWhere.isEmpty || normalizedWhere.contains(queryWhere);
+
+  final matchesCity =
+      queryCity.isEmpty || _normalize(item.city) == queryCity;
+
+  final matchesAvailableSoon =
+      !filters.availableSoonOnly || item.isAvailableSoon;
+
+  return matchesWhat &&
+      matchesWhere &&
+      matchesCity &&
+      matchesAvailableSoon;
+}
+
+int _compareSearchItemsForUi({
+  required SearchItem a,
+  required SearchItem b,
+  required SortMode sortMode,
+}) {
+  switch (sortMode) {
+    case SortMode.recommended:
+      return _compareRecommended(a, b);
+    case SortMode.ratingDesc:
+      return _compareByRatingDesc(a, b);
+    case SortMode.priceAsc:
+      return _compareByPriceAsc(a, b);
+    case SortMode.priceDesc:
+      return _compareByPriceDesc(a, b);
+    case SortMode.distanceAsc:
+      return a.displayName.compareTo(b.displayName);
+  }
+}
+
+int _compareRecommended(SearchItem a, SearchItem b) {
+  final verified = (b.isVerified ? 1 : 0) - (a.isVerified ? 1 : 0);
+  if (verified != 0) return verified;
+
+  final availableSoon =
+      (b.isAvailableSoon ? 1 : 0) - (a.isAvailableSoon ? 1 : 0);
+  if (availableSoon != 0) return availableSoon;
+
+  final rating = b.rating.compareTo(a.rating);
+  if (rating != 0) return rating;
+
+  final reviewCount = b.reviewCount.compareTo(a.reviewCount);
+  if (reviewCount != 0) return reviewCount;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByRatingDesc(SearchItem a, SearchItem b) {
+  final rating = b.rating.compareTo(a.rating);
+  if (rating != 0) return rating;
+
+  final reviewCount = b.reviewCount.compareTo(a.reviewCount);
+  if (reviewCount != 0) return reviewCount;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByPriceAsc(SearchItem a, SearchItem b) {
+  final byPrice = _effectivePrice(a).compareTo(_effectivePrice(b));
+  if (byPrice != 0) return byPrice;
+
+  final byRating = b.rating.compareTo(a.rating);
+  if (byRating != 0) return byRating;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _compareByPriceDesc(SearchItem a, SearchItem b) {
+  final byPrice = _effectivePrice(b).compareTo(_effectivePrice(a));
+  if (byPrice != 0) return byPrice;
+
+  final byRating = b.rating.compareTo(a.rating);
+  if (byRating != 0) return byRating;
+
+  return a.displayName.compareTo(b.displayName);
+}
+
+int _effectivePrice(SearchItem item) {
+  if (item.priceXofMin <= 0 && item.priceXofMax <= 0) {
+    return 1 << 30;
   }
 
-  return _replaceSearchItemById(
-    items: items,
-    id: professionalProfile.id,
-    replacement: resolved.item,
-  );
+  if (item.priceXofMin > 0) return item.priceXofMin;
+  if (item.priceXofMax > 0) return item.priceXofMax;
+
+  return 1 << 30;
 }
 
 String _normalizeSearchText(String value) {
@@ -307,4 +445,12 @@ String? _normalizeOptionalFilterValue(String? value) {
   if (normalized.isEmpty) return null;
 
   return normalized;
+}
+
+String _normalize(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+      .replaceAll(RegExp(r'\s+'), ' ');
 }
