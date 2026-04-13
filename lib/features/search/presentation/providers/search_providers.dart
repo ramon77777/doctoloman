@@ -191,7 +191,8 @@ final searchResultsProvider =
     FutureProvider.family<List<SearchItem>, SearchSeed>((ref, seed) async {
   final repo = ref.watch(searchRepositoryProvider);
   final filters = ref.watch(searchFiltersProvider(seed));
-  final allProfessionalProfiles = ref.watch(allProfessionalProfilesProvider);
+  final allProfessionalProfiles =
+      await ref.watch(allProfessionalProfilesProvider.future);
 
   const double? userLat = null;
   const double? userLng = null;
@@ -229,7 +230,10 @@ final searchResultsProvider =
 }, name: 'searchResultsProvider');
 
 final availableSearchCitiesProvider = Provider<List<String>>((ref) {
-  final allProfessionalProfiles = ref.watch(allProfessionalProfilesProvider);
+  final allProfessionalProfilesAsync = ref.watch(allProfessionalProfilesProvider);
+  final allProfessionalProfiles =
+      allProfessionalProfilesAsync.valueOrNull ??
+          const <ProfessionalProfile>[];
 
   final cities = <String>{};
 

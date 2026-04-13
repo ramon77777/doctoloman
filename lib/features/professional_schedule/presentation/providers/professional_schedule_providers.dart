@@ -1,19 +1,49 @@
-import 'dart:convert';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/models/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/datasources/professional_schedule_local_datasource.dart';
+import '../../data/datasources/professional_schedule_remote_datasource.dart';
+import '../../data/professional_schedule_local_storage.dart';
+import '../../data/repositories/professional_schedule_repository_impl.dart';
 import '../../domain/professional_schedule.dart';
+import '../../domain/professional_schedule_repository.dart';
 
-const _professionalSchedulesStorageKey = 'professional_schedules_v3';
-const _defaultPractitionerId = 'pro_001';
+final professionalScheduleLocalStorageProvider =
+    Provider<ProfessionalScheduleLocalStorage>(
+  (ref) => ProfessionalScheduleLocalStorage(
+    ref.watch(sharedPreferencesProvider),
+  ),
+  name: 'professionalScheduleLocalStorageProvider',
+);
+
+final professionalScheduleLocalDataSourceProvider =
+    Provider<ProfessionalScheduleLocalDataSource>(
+  (ref) => ProfessionalScheduleLocalDataSource(
+    ref.watch(professionalScheduleLocalStorageProvider),
+  ),
+  name: 'professionalScheduleLocalDataSourceProvider',
+);
+
+final professionalScheduleRemoteDataSourceProvider =
+    Provider<ProfessionalScheduleRemoteDataSource>(
+  (ref) => const FakeProfessionalScheduleRemoteDataSource(),
+  name: 'professionalScheduleRemoteDataSourceProvider',
+);
+
+final professionalScheduleRepositoryProvider =
+    Provider<ProfessionalScheduleRepository>(
+  (ref) => ProfessionalScheduleRepositoryImpl(
+    local: ref.watch(professionalScheduleLocalDataSourceProvider),
+    remote: ref.watch(professionalScheduleRemoteDataSourceProvider),
+  ),
+  name: 'professionalScheduleRepositoryProvider',
+);
 
 final practitionerScheduleProvider =
     Provider.family<List<DaySchedule>, String>((ref, practitionerId) {
   final schedulesByPractitioner = ref.watch(professionalSchedulesMapProvider);
-  final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+  final normalizedPractitionerId = practitionerId.trim();
 
   final resolved = schedulesByPractitioner[normalizedPractitionerId];
   if (resolved != null && resolved.isNotEmpty) {
@@ -26,11 +56,11 @@ final practitionerScheduleProvider =
 final professionalSchedulesMapProvider = StateNotifierProvider<
     ProfessionalScheduleController, Map<String, List<DaySchedule>>>(
   (ref) {
-    final prefs = ref.watch(sharedPreferencesProvider);
+    final repository = ref.watch(professionalScheduleRepositoryProvider);
     final authUser = ref.watch(authControllerProvider).user;
 
     return ProfessionalScheduleController(
-      prefs,
+      repository,
       authUser: authUser,
     );
   },
@@ -40,145 +70,41 @@ final professionalSchedulesMapProvider = StateNotifierProvider<
 class ProfessionalScheduleController
     extends StateNotifier<Map<String, List<DaySchedule>>> {
   ProfessionalScheduleController(
-    this._prefs, {
+    this._repository, {
     required AppUser? authUser,
-  }) : super(_loadInitialState(_prefs, authUser: authUser));
+  })  : _authUser = authUser,
+        super(_initialState(authUser)) {
+    _bootstrap();
+  }
 
-  final SharedPreferences _prefs;
+  final ProfessionalScheduleRepository _repository;
+  final AppUser? _authUser;
 
   static final List<DaySchedule> defaultSchedule =
-      List<DaySchedule>.unmodifiable(
-    const [
-      DaySchedule(
-        weekday: 1,
-        label: 'Lundi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '08:00', end: '08:15'),
-          TimeSlot(start: '08:15', end: '08:30'),
-          TimeSlot(start: '08:30', end: '08:45'),
-          TimeSlot(start: '08:45', end: '09:00'),
-          TimeSlot(start: '14:00', end: '14:15'),
-          TimeSlot(start: '14:15', end: '14:30'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 2,
-        label: 'Mardi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '08:00', end: '08:15'),
-          TimeSlot(start: '08:15', end: '08:30'),
-          TimeSlot(start: '14:00', end: '14:15'),
-          TimeSlot(start: '14:15', end: '14:30'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 3,
-        label: 'Mercredi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '08:30', end: '08:45'),
-          TimeSlot(start: '08:45', end: '09:00'),
-          TimeSlot(start: '09:00', end: '09:20'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 4,
-        label: 'Jeudi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '10:00', end: '10:20'),
-          TimeSlot(start: '10:30', end: '10:50'),
-          TimeSlot(start: '15:00', end: '15:30'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 5,
-        label: 'Vendredi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '08:10', end: '08:18'),
-          TimeSlot(start: '08:20', end: '08:35'),
-          TimeSlot(start: '09:00', end: '09:12'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 6,
-        label: 'Samedi',
-        isOpen: true,
-        slots: [
-          TimeSlot(start: '09:00', end: '09:20'),
-          TimeSlot(start: '09:30', end: '09:50'),
-        ],
-      ),
-      DaySchedule(
-        weekday: 7,
-        label: 'Dimanche',
-        isOpen: false,
-        slots: [],
-      ),
-    ],
-  );
+      _cloneSchedule(defaultProfessionalSchedule);
 
-  static Map<String, List<DaySchedule>> _loadInitialState(
-    SharedPreferences prefs, {
-    required AppUser? authUser,
-  }) {
-    final raw = prefs.getString(_professionalSchedulesStorageKey);
-    final result = <String, List<DaySchedule>>{};
-
-    if (raw != null && raw.trim().isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map<String, dynamic>) {
-          decoded.forEach((key, value) {
-            final normalizedPractitionerId = _normalizePractitionerId(key);
-            if (normalizedPractitionerId.isEmpty) return;
-            if (value is! List) return;
-
-            final days = <DaySchedule>[];
-
-            for (final entry in value) {
-              if (entry is! Map) continue;
-
-              try {
-                final day = DaySchedule.fromMap(
-                  Map<String, dynamic>.from(entry),
-                );
-                days.add(day);
-              } catch (_) {
-                // Ignore uniquement l'entrée invalide.
-              }
-            }
-
-            if (days.isNotEmpty) {
-              result[normalizedPractitionerId] = _sortAndNormalize(days);
-            }
-          });
-        }
-      } catch (_) {
-        // Ignore et retombe sur l'état par défaut.
-      }
-    }
-
-    if (!result.containsKey(_defaultPractitionerId)) {
-      result[_defaultPractitionerId] = _cloneSchedule(defaultSchedule);
-    }
+  static Map<String, List<DaySchedule>> _initialState(AppUser? authUser) {
+    final result = <String, List<DaySchedule>>{
+      defaultPractitionerId: _cloneSchedule(defaultProfessionalSchedule),
+    };
 
     final currentProfessionalId = _resolveCurrentProfessionalId(authUser);
     if (currentProfessionalId != null && currentProfessionalId.isNotEmpty) {
-      result.putIfAbsent(
-        currentProfessionalId,
-        () => _cloneSchedule(defaultSchedule),
-      );
+      result[currentProfessionalId] = _cloneSchedule(defaultProfessionalSchedule);
     }
 
     return Map<String, List<DaySchedule>>.unmodifiable(result);
   }
 
+  Future<void> _bootstrap() async {
+    final loaded = await _repository.readAll(
+      currentProfessionalId: _resolveCurrentProfessionalId(_authUser),
+    );
+    state = loaded;
+  }
+
   List<DaySchedule> scheduleFor(String practitionerId) {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final normalizedPractitionerId = practitionerId.trim();
     if (normalizedPractitionerId.isEmpty) {
       return _cloneSchedule(defaultSchedule);
     }
@@ -192,7 +118,7 @@ class ProfessionalScheduleController
   }
 
   Future<void> toggleDay(String practitionerId, int weekday, bool open) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final normalizedPractitionerId = practitionerId.trim();
     final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
@@ -214,7 +140,7 @@ class ProfessionalScheduleController
     required int weekday,
     required TimeSlot slot,
   }) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final normalizedPractitionerId = practitionerId.trim();
     final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
@@ -237,7 +163,7 @@ class ProfessionalScheduleController
     required int? slotIndex,
     required TimeSlot slot,
   }) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final normalizedPractitionerId = practitionerId.trim();
     final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
@@ -245,7 +171,7 @@ class ProfessionalScheduleController
         if (day.weekday == weekday)
           day.copyWith(
             isOpen: true,
-            slots: _replaceSlot(day.slots, slotIndex, slot),
+            slots: replaceScheduleSlot(day.slots, slotIndex, slot),
           )
         else
           day,
@@ -259,14 +185,14 @@ class ProfessionalScheduleController
     required int weekday,
     required int? slotIndex,
   }) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
+    final normalizedPractitionerId = practitionerId.trim();
     final current = scheduleFor(normalizedPractitionerId);
 
     final next = [
       for (final day in current)
         if (day.weekday == weekday)
           day.copyWith(
-            slots: _removeSlot(day.slots, slotIndex),
+            slots: removeScheduleSlot(day.slots, slotIndex),
           )
         else
           day,
@@ -276,39 +202,24 @@ class ProfessionalScheduleController
   }
 
   Future<void> resetDefaults(String practitionerId) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
-    await _replacePractitionerSchedule(
-      normalizedPractitionerId,
-      _cloneSchedule(defaultSchedule),
+    final updated = await _repository.resetDefaults(
+      practitionerId: practitionerId,
+      currentProfessionalId: _resolveCurrentProfessionalId(_authUser),
     );
+    state = updated;
   }
 
   Future<void> _replacePractitionerSchedule(
     String practitionerId,
     List<DaySchedule> next,
   ) async {
-    final normalizedPractitionerId = _normalizePractitionerId(practitionerId);
-    if (normalizedPractitionerId.isEmpty) return;
-
-    final normalizedSchedule = _sortAndNormalize(next);
-
-    final nextState = Map<String, List<DaySchedule>>.from(state)
-      ..[normalizedPractitionerId] = normalizedSchedule;
-
-    state = Map<String, List<DaySchedule>>.unmodifiable(nextState);
-    await _persist();
-  }
-
-  Future<void> _persist() async {
-    final payload = <String, dynamic>{
-      for (final entry in state.entries)
-        entry.key: entry.value.map((day) => day.toMap()).toList(),
-    };
-
-    await _prefs.setString(
-      _professionalSchedulesStorageKey,
-      jsonEncode(payload),
+    final updated = await _repository.replaceSchedule(
+      practitionerId: practitionerId,
+      schedule: next,
+      currentProfessionalId: _resolveCurrentProfessionalId(_authUser),
     );
+
+    state = updated;
   }
 
   static String? _resolveCurrentProfessionalId(AppUser? authUser) {
@@ -316,59 +227,13 @@ class ProfessionalScheduleController
       return null;
     }
 
-    final normalizedId = _normalizePractitionerId(authUser.id);
+    final normalizedId = authUser.id.trim();
     if (normalizedId.isNotEmpty) {
       return normalizedId;
     }
 
     return null;
   }
-
-  static List<DaySchedule> _sortAndNormalize(List<DaySchedule> input) {
-    final sorted = [...input]..sort((a, b) => a.weekday.compareTo(b.weekday));
-
-    final deduplicatedByWeekday = <int, DaySchedule>{};
-    for (final day in sorted) {
-      deduplicatedByWeekday[day.weekday] = day.copyWith(
-        slots: sortTimeSlots(day.slots),
-      );
-    }
-
-    return List<DaySchedule>.unmodifiable(
-      deduplicatedByWeekday.values.toList()
-        ..sort((a, b) => a.weekday.compareTo(b.weekday)),
-    );
-  }
-
-  static List<TimeSlot> _replaceSlot(
-    List<TimeSlot> slots,
-    int? slotIndex,
-    TimeSlot slot,
-  ) {
-    if (slotIndex == null || slotIndex < 0 || slotIndex >= slots.length) {
-      return sortTimeSlots(slots);
-    }
-
-    final updated = [...slots];
-    updated[slotIndex] = slot;
-    return sortTimeSlots(updated);
-  }
-
-  static List<TimeSlot> _removeSlot(
-    List<TimeSlot> slots,
-    int? slotIndex,
-  ) {
-    if (slotIndex == null || slotIndex < 0 || slotIndex >= slots.length) {
-      return sortTimeSlots(slots);
-    }
-
-    final updated = [...slots]..removeAt(slotIndex);
-    return sortTimeSlots(updated);
-  }
-}
-
-String _normalizePractitionerId(String value) {
-  return value.trim();
 }
 
 List<DaySchedule> _cloneSchedule(List<DaySchedule> input) {

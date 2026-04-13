@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/utils/string_normalizers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
-import '../../data/in_memory_patient_profile_repository.dart';
+import '../../data/datasources/patient_profile_local_datasource.dart';
+import '../../data/datasources/patient_profile_remote_datasource.dart';
 import '../../data/patient_profile_local_storage.dart';
+import '../../data/repositories/patient_profile_repository_impl.dart';
 import '../../domain/patient_profile.dart';
 import '../../domain/patient_profile_repository.dart';
 
@@ -14,9 +16,23 @@ final patientProfileLocalStorageProvider = Provider<PatientProfileLocalStorage>(
   name: 'patientProfileLocalStorageProvider',
 );
 
-final patientProfileRepositoryProvider = Provider<PatientProfileRepository>(
-  (ref) => InMemoryPatientProfileRepository(
+final patientProfileLocalDataSourceProvider = Provider<PatientProfileLocalDataSource>(
+  (ref) => PatientProfileLocalDataSource(
     ref.watch(patientProfileLocalStorageProvider),
+  ),
+  name: 'patientProfileLocalDataSourceProvider',
+);
+
+final patientProfileRemoteDataSourceProvider =
+    Provider<PatientProfileRemoteDataSource>(
+  (ref) => const FakePatientProfileRemoteDataSource(),
+  name: 'patientProfileRemoteDataSourceProvider',
+);
+
+final patientProfileRepositoryProvider = Provider<PatientProfileRepository>(
+  (ref) => PatientProfileRepositoryImpl(
+    local: ref.watch(patientProfileLocalDataSourceProvider),
+    remote: ref.watch(patientProfileRemoteDataSourceProvider),
   ),
   name: 'patientProfileRepositoryProvider',
 );
