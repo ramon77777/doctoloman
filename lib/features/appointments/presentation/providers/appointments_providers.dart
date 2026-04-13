@@ -7,7 +7,9 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../data/appointments_local_storage.dart';
-import '../../data/in_memory_appointments_repository.dart';
+import '../../data/datasources/appointments_local_datasource.dart';
+import '../../data/datasources/appointments_remote_datasource.dart';
+import '../../data/repositories/appointments_repository_impl.dart';
 import '../../domain/appointment.dart';
 import '../../domain/appointments_repository.dart';
 
@@ -16,9 +18,24 @@ final appointmentsLocalStorageProvider = Provider<AppointmentsLocalStorage>(
   name: 'appointmentsLocalStorageProvider',
 );
 
-final appointmentsRepositoryProvider = Provider<AppointmentsRepository>(
-  (ref) => InMemoryAppointmentsRepository(
+final appointmentsLocalDataSourceProvider =
+    Provider<AppointmentsLocalDataSource>(
+  (ref) => AppointmentsLocalDataSource(
     ref.watch(appointmentsLocalStorageProvider),
+  ),
+  name: 'appointmentsLocalDataSourceProvider',
+);
+
+final appointmentsRemoteDataSourceProvider =
+    Provider<AppointmentsRemoteDataSource>(
+  (ref) => const FakeAppointmentsRemoteDataSource(),
+  name: 'appointmentsRemoteDataSourceProvider',
+);
+
+final appointmentsRepositoryProvider = Provider<AppointmentsRepository>(
+  (ref) => AppointmentsRepositoryImpl(
+    local: ref.watch(appointmentsLocalDataSourceProvider),
+    remote: ref.watch(appointmentsRemoteDataSourceProvider),
   ),
   name: 'appointmentsRepositoryProvider',
 );
