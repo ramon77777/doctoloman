@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/app_user.dart';
 import '../../../../core/services/local_notifications_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../data/appointments_local_storage.dart';
 import '../../data/in_memory_appointments_repository.dart';
@@ -50,16 +51,12 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
     if (authUser.role == AppUserRole.professional) {
       final professionalProfile = ref.watch(professionalProfileProvider);
 
-      final professionalId = _normalizeKey(professionalProfile.id);
-      final professionalName =
-          _normalizeSearch(professionalProfile.displayName);
-
       final filtered = allItems.where((appointment) {
-        final byId =
-            _normalizeKey(appointment.practitionerId) == professionalId;
-        final byName =
-            _normalizeSearch(appointment.practitionerName) == professionalName;
-        return byId || byName;
+        return _belongsToProfessional(
+          appointment: appointment,
+          profile: professionalProfile,
+          authUser: authUser,
+        );
       }).toList()
         ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
@@ -85,28 +82,32 @@ final appointmentsListProvider = FutureProvider<List<Appointment>>(
 final appointmentByIdProvider =
     FutureProvider.family<Appointment?, String>((ref, id) async {
   final normalizedId = _normalizeKey(id);
-  if (normalizedId.isEmpty) return null;
+  if (normalizedId.isEmpty) {
+    return null;
+  }
 
   final authState = ref.watch(authControllerProvider);
   final authUser = authState.user;
-  if (authUser == null) return null;
+  if (authUser == null) {
+    return null;
+  }
 
   final repo = ref.watch(appointmentsRepositoryProvider);
   final appointment = await repo.getById(normalizedId);
-  if (appointment == null) return null;
+  if (appointment == null) {
+    return null;
+  }
 
   if (authUser.role == AppUserRole.professional) {
     final professionalProfile = ref.watch(professionalProfileProvider);
 
-    final professionalId = _normalizeKey(professionalProfile.id);
-    final professionalName =
-        _normalizeSearch(professionalProfile.displayName);
+    final isAllowed = _belongsToProfessional(
+      appointment: appointment,
+      profile: professionalProfile,
+      authUser: authUser,
+    );
 
-    final byId = _normalizeKey(appointment.practitionerId) == professionalId;
-    final byName =
-        _normalizeSearch(appointment.practitionerName) == professionalName;
-
-    if (!byId && !byName) {
+    if (!isAllowed) {
       return null;
     }
 
@@ -173,22 +174,34 @@ class AppointmentsFiltersController
 
   void setQuery(String value) {
     final normalized = _normalizeSearch(value);
-    if (normalized == state.query) return;
+    if (normalized == state.query) {
+      return;
+    }
+
     state = state.copyWith(query: normalized);
   }
 
   void clearQuery() {
-    if (state.query.isEmpty) return;
+    if (state.query.isEmpty) {
+      return;
+    }
+
     state = state.copyWith(query: '');
   }
 
   void setFilter(AppointmentsViewFilter value) {
-    if (value == state.filter) return;
+    if (value == state.filter) {
+      return;
+    }
+
     state = state.copyWith(filter: value);
   }
 
   void reset() {
-    if (state == AppointmentsFilters.initial) return;
+    if (state == AppointmentsFilters.initial) {
+      return;
+    }
+
     state = AppointmentsFilters.initial;
   }
 }
@@ -293,7 +306,9 @@ class TakenSlotsQuery {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
+    if (identical(this, other)) {
+      return true;
+    }
 
     return other is TakenSlotsQuery &&
         _normalizeKey(other.practitionerId) == _normalizeKey(practitionerId) &&
@@ -393,7 +408,9 @@ class AppointmentsController {
     required String slot,
   }) async {
     final before = await _repo.getById(id);
-    if (before == null) return null;
+    if (before == null) {
+      return null;
+    }
 
     final updated = await _repo.reschedule(
       id: id,
@@ -490,7 +507,9 @@ bool _matchesAppointmentSearch({
   required Appointment appointment,
   required String query,
 }) {
-  if (query.isEmpty) return true;
+  if (query.isEmpty) {
+    return true;
+  }
 
   final haystack = _normalizeSearch(
     '${appointment.practitionerName} '
@@ -567,6 +586,32 @@ bool _isSameCalendarDay(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
+bool _belongsToProfessional({
+  required Appointment appointment,
+  required ProfessionalProfile profile,
+  required AppUser authUser,
+}) {
+  final appointmentPractitionerId = _normalizeKey(appointment.practitionerId);
+  final appointmentPractitionerName =
+      _normalizeSearch(appointment.practitionerName);
+
+  final profileId = _normalizeKey(profile.id);
+  final profileName = _normalizeSearch(profile.displayName);
+
+  final authId = _normalizeKey(authUser.id);
+  final authName = _normalizeSearch(authUser.name);
+
+  final byProfileId =
+      profileId.isNotEmpty && appointmentPractitionerId == profileId;
+  final byProfileName =
+      profileName.isNotEmpty && appointmentPractitionerName == profileName;
+  final byAuthId = authId.isNotEmpty && appointmentPractitionerId == authId;
+  final byAuthName =
+      authName.isNotEmpty && appointmentPractitionerName == authName;
+
+  return byProfileId || byProfileName || byAuthId || byAuthName;
+}
+
 String _normalizeSlot(String value) {
   return value.trim();
 }
@@ -577,7 +622,9 @@ String _normalizeKey(String value) {
 
 String _normalizePhoneKey(String value) {
   final trimmed = value.trim();
-  if (trimmed.isEmpty) return '';
+  if (trimmed.isEmpty) {
+    return '';
+  }
   return trimmed.replaceAll(RegExp(r'\D'), '');
 }
 

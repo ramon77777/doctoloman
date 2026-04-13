@@ -15,6 +15,7 @@ import '../../features/search/presentation/pages/practitioner_detail_page.dart';
 import '../../features/search/presentation/pages/search_results_page.dart';
 import 'app_routes.dart';
 import 'route_args.dart';
+import 'route_guards.dart';
 
 class AppRouter {
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -53,19 +54,17 @@ class AppRouter {
   static Route<dynamic> _buildLoginPhoneRoute(RouteSettings settings) {
     final args = settings.arguments;
 
-    bool isSignup = false;
-
-    if (args is LoginPhoneArgs) {
-      isSignup = args.isSignup;
-    } else if (args is Map<String, dynamic>) {
-      final raw = args['isSignup'];
-      if (raw is bool) {
-        isSignup = raw;
-      }
-    }
+    final isSignup = switch (args) {
+      LoginPhoneArgs value => value.isSignup,
+      Map value when value['isSignup'] is bool => value['isSignup'] as bool,
+      _ => false,
+    };
 
     return fadeRoute(
-      LoginPhonePage(isSignup: isSignup),
+      RouteGuard(
+        access: AppRouteAccess.unauthenticatedOnly,
+        child: LoginPhonePage(isSignup: isSignup),
+      ),
       settings: settings,
     );
   }
@@ -80,9 +79,12 @@ class AppRouter {
     }
 
     return fadeRoute(
-      SearchResultsPage(
-        initialWhat: args.initialWhat,
-        initialWhere: args.initialWhere,
+      RouteGuard(
+        access: AppRouteAccess.public,
+        child: SearchResultsPage(
+          initialWhat: args.initialWhat,
+          initialWhere: args.initialWhere,
+        ),
       ),
       settings: settings,
     );
@@ -98,7 +100,10 @@ class AppRouter {
     }
 
     return fadeRoute(
-      PractitionerDetailPage(item: args.item),
+      RouteGuard(
+        access: AppRouteAccess.public,
+        child: PractitionerDetailPage(item: args.item),
+      ),
       settings: settings,
     );
   }
@@ -113,7 +118,10 @@ class AppRouter {
     }
 
     return fadeRoute(
-      PharmacyDetailPage(pharmacyId: args.pharmacyId),
+      RouteGuard(
+        access: AppRouteAccess.public,
+        child: PharmacyDetailPage(pharmacyId: args.pharmacyId),
+      ),
       settings: settings,
     );
   }
@@ -122,13 +130,19 @@ class AppRouter {
     final args = settings.arguments;
     if (args is! AppointmentDetailArgs) {
       return fadeRoute(
-        const AppointmentsPage(),
+        const RouteGuard(
+          access: AppRouteAccess.patientOnly,
+          child: AppointmentsPage(),
+        ),
         settings: settings,
       );
     }
 
     return fadeRoute(
-      AppointmentDetailPage(appointmentId: args.appointmentId),
+      RouteGuard(
+        access: AppRouteAccess.patientOnly,
+        child: AppointmentDetailPage(appointmentId: args.appointmentId),
+      ),
       settings: settings,
     );
   }
@@ -137,13 +151,19 @@ class AppRouter {
     final args = settings.arguments;
     if (args is! MedicalRecordDetailArgs) {
       return fadeRoute(
-        const MedicalRecordsPage(),
+        const RouteGuard(
+          access: AppRouteAccess.patientOnly,
+          child: MedicalRecordsPage(),
+        ),
         settings: settings,
       );
     }
 
     return fadeRoute(
-      MedicalRecordDetailPage(recordId: args.recordId),
+      RouteGuard(
+        access: AppRouteAccess.patientOnly,
+        child: MedicalRecordDetailPage(recordId: args.recordId),
+      ),
       settings: settings,
     );
   }
@@ -152,13 +172,19 @@ class AppRouter {
     final args = settings.arguments;
     if (args is! MedicalRecordEditArgs) {
       return fadeRoute(
-        const MedicalRecordsPage(),
+        const RouteGuard(
+          access: AppRouteAccess.patientOnly,
+          child: MedicalRecordsPage(),
+        ),
         settings: settings,
       );
     }
 
     return fadeRoute(
-      MedicalRecordEditPage(recordId: args.recordId),
+      RouteGuard(
+        access: AppRouteAccess.patientOnly,
+        child: MedicalRecordEditPage(recordId: args.recordId),
+      ),
       settings: settings,
     );
   }
@@ -169,14 +195,20 @@ class AppRouter {
     final args = settings.arguments;
     if (args is! ProfessionalAppointmentDetailArgs) {
       return fadeRoute(
-        const ProfessionalAppointmentsPage(),
+        const RouteGuard(
+          access: AppRouteAccess.professionalOnly,
+          child: ProfessionalAppointmentsPage(),
+        ),
         settings: settings,
       );
     }
 
     return fadeRoute(
-      ProfessionalAppointmentDetailPage(
-        appointmentId: args.appointmentId,
+      RouteGuard(
+        access: AppRouteAccess.professionalOnly,
+        child: ProfessionalAppointmentDetailPage(
+          appointmentId: args.appointmentId,
+        ),
       ),
       settings: settings,
     );

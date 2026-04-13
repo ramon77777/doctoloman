@@ -183,7 +183,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                     ),
                     InfoLine(
                       label: 'Statut',
-                      value: AppointmentUiHelpers.statusLabel(
+                      value: AppointmentUiHelpers.professionalStatusBadgeLabel(
                         appointment.status,
                       ),
                     ),
@@ -572,8 +572,7 @@ bool _belongsToProfessional({
       profileId.isNotEmpty && appointmentPractitionerId == profileId;
   final byProfileName =
       profileName.isNotEmpty && appointmentPractitionerName == profileName;
-  final byAuthId =
-      authId.isNotEmpty && appointmentPractitionerId == authId;
+  final byAuthId = authId.isNotEmpty && appointmentPractitionerId == authId;
   final byAuthName =
       authName.isNotEmpty && appointmentPractitionerName == authName;
 

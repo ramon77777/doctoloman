@@ -18,7 +18,7 @@ class AppointmentUiHelpers {
   static String shortStatusBadgeLabel(AppointmentStatus status) {
     switch (status) {
       case AppointmentStatus.pending:
-        return 'Demande envoyée';
+        return 'En attente';
       case AppointmentStatus.confirmed:
         return 'Confirmé';
       case AppointmentStatus.cancelledByPatient:
@@ -157,5 +157,37 @@ class AppointmentUiHelpers {
   static bool canProfessionalCancelConfirmed(Appointment appointment) {
     return appointment.status == AppointmentStatus.confirmed &&
         appointment.isUpcoming;
+  }
+
+  static bool isPending(Appointment appointment) {
+    return appointment.status == AppointmentStatus.pending;
+  }
+
+  static bool isUpcomingConfirmed(Appointment appointment) {
+    return appointment.status == AppointmentStatus.confirmed &&
+        appointment.isUpcoming;
+  }
+
+  static bool isHistory(Appointment appointment) {
+    return appointment.status == AppointmentStatus.confirmed &&
+        !appointment.isUpcoming;
+  }
+
+  static bool isClosed(Appointment appointment) {
+    return appointment.status == AppointmentStatus.cancelledByPatient ||
+        appointment.status == AppointmentStatus.declinedByProfessional;
+  }
+
+  static String patientSectionLabel(Appointment appointment) {
+    if (isPending(appointment)) {
+      return 'En attente';
+    }
+    if (isUpcomingConfirmed(appointment)) {
+      return 'À venir';
+    }
+    if (isHistory(appointment)) {
+      return 'Historique';
+    }
+    return 'Clos';
   }
 }

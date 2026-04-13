@@ -435,8 +435,6 @@ class _RescheduleSelection {
   });
 
   final DateTime day;
-
-  /// Heure de début uniquement, ex: "08:15"
   final String slot;
 }
 
@@ -453,8 +451,6 @@ class _RescheduleDialog extends ConsumerStatefulWidget {
 
 class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
   late DateTime _selectedDay;
-
-  /// Slot affiché sélectionné, ex: "08:15 - 08:30"
   String? _selectedSlot;
 
   @override
@@ -487,9 +483,7 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
     if (parts.length != 2) return null;
 
     final start = parts.first.trim();
-    if (start.isEmpty) return null;
-
-    return start;
+    return start.isEmpty ? null : start;
   }
 
   bool _isSameAppointmentDisplaySlot(String displaySlot) {
@@ -514,6 +508,7 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
         : buildSlotsForDay(
             schedule: schedule,
             selectedDay: _selectedDay,
+            minimumLeadTimeMinutes: 0,
           );
 
     final takenSlotsAsync = ref.watch(
@@ -563,7 +558,8 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
                 ),
                 error: (e, _) => Text('$e'),
                 data: (takenSlots) {
-                  final availableSlots = rawSlotResult.slots.where((displaySlot) {
+                  final availableSlots =
+                      rawSlotResult.slots.where((displaySlot) {
                     final isCurrentSameDay = AppDateFormatters.isSameCalendarDay(
                       _selectedDay,
                       widget.appointment.day,
@@ -901,6 +897,11 @@ class _HeaderCard extends StatelessWidget {
                     children: [
                       AppointmentStatusBadge(status: appointment.status),
                       AppointmentTemporalBadge(appointment: appointment),
+                      AppointmentMiniBadge(
+                        label: AppointmentUiHelpers.patientSectionLabel(
+                          appointment,
+                        ),
+                      ),
                       AppointmentDayHintBadge(appointment: appointment),
                     ],
                   ),

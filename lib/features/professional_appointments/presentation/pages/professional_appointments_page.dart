@@ -973,7 +973,8 @@ bool _belongsToProfessional({
   required AppUser? authUser,
 }) {
   final appointmentPractitionerId = _normalizeKey(appointment.practitionerId);
-  final appointmentPractitionerName = _normalizeSearch(appointment.practitionerName);
+  final appointmentPractitionerName =
+      _normalizeSearch(appointment.practitionerName);
 
   final profileId = _normalizeKey(profile.id);
   final profileName = _normalizeSearch(profile.displayName);

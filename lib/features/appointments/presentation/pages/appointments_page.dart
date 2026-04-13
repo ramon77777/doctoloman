@@ -6,6 +6,7 @@ import '../../../../app/router/route_args.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../../core/ui/info_widgets.dart';
 import '../../domain/appointment.dart';
+import '../helpers/appointment_ui_helpers.dart';
 import '../providers/appointments_providers.dart';
 import '../widgets/appointment_badges.dart';
 
@@ -44,6 +45,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
   }
 
   void _invalidateAppointmentsQueries() {
+    ref.invalidate(allAppointmentsProvider);
     ref.invalidate(appointmentsListProvider);
     ref.invalidate(appointmentsStatsProvider);
     ref.invalidate(nextUpcomingAppointmentProvider);
@@ -57,6 +59,15 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
       text: query,
       selection: TextSelection.collapsed(offset: query.length),
       composing: TextRange.empty,
+    );
+  }
+
+  void _openDetail(BuildContext context, String appointmentId) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.appointmentDetail,
+      arguments: AppointmentDetailArgs(
+        appointmentId: appointmentId,
+      ),
     );
   }
 
@@ -89,6 +100,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                 onRefresh: _refresh,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
                   children: const [
                     SizedBox(height: 120),
                     EmptyStateView(
@@ -130,7 +142,10 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                       return Column(
                         children: [
                           const SizedBox(height: 14),
-                          _NextAppointmentCard(appointment: appointment),
+                          _NextAppointmentCard(
+                            appointment: appointment,
+                            onTap: () => _openDetail(context, appointment.id),
+                          ),
                         ],
                       );
                     },
@@ -189,27 +204,101 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                         );
                       }
 
-                      return Column(
-                        children: filteredItems.map((appointment) {
-                          final highlight =
-                              filters.filter == AppointmentsViewFilter.upcoming &&
-                                  AppDateFormatters.isToday(
-                                    appointment.scheduledAt,
-                                  );
+                      final sections = _AppointmentsSections.fromItems(
+                        filteredItems,
+                      );
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _AppointmentCard(
-                              appointment: appointment,
-                              highlight: highlight,
-                              onTap: () => _openDetail(
-                                context,
-                                appointment.id,
+                      final widgets = <Widget>[];
+                      final showAll =
+                          filters.filter == AppointmentsViewFilter.all;
+
+                      void addSection({
+                        required String title,
+                        required String subtitle,
+                        required IconData icon,
+                        required List<Appointment> items,
+                      }) {
+                        if (items.isEmpty) return;
+
+                        if (widgets.isNotEmpty) {
+                          widgets.add(const SizedBox(height: 10));
+                        }
+
+                        widgets.add(
+                          _SectionTitle(
+                            title: title,
+                            subtitle: subtitle,
+                            icon: icon,
+                          ),
+                        );
+                        widgets.add(const SizedBox(height: 10));
+
+                        widgets.addAll(
+                          items.map(
+                            (appointment) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _AppointmentCard(
+                                appointment: appointment,
+                                highlight: filters.filter ==
+                                        AppointmentsViewFilter.upcoming &&
+                                    AppDateFormatters.isToday(
+                                      appointment.scheduledAt,
+                                    ),
+                                onTap: () => _openDetail(
+                                  context,
+                                  appointment.id,
+                                ),
                               ),
                             ),
-                          );
-                        }).toList(),
+                          ),
+                        );
+                      }
+
+                      addSection(
+                        title: 'Demandes en attente',
+                        subtitle:
+                            'Demandes envoyées au professionnel en attente de réponse',
+                        icon: Icons.pending_actions_outlined,
+                        items: showAll ||
+                                filters.filter == AppointmentsViewFilter.pending
+                            ? sections.pending
+                            : const [],
                       );
+
+                      addSection(
+                        title: 'Rendez-vous à venir',
+                        subtitle:
+                            'Rendez-vous confirmés, à venir ou prévus aujourd’hui',
+                        icon: Icons.event_available_outlined,
+                        items: showAll ||
+                                filters.filter == AppointmentsViewFilter.upcoming
+                            ? sections.upcoming
+                            : const [],
+                      );
+
+                      addSection(
+                        title: 'Historique',
+                        subtitle: 'Rendez-vous confirmés déjà passés',
+                        icon: Icons.history_outlined,
+                        items: showAll ||
+                                filters.filter == AppointmentsViewFilter.history
+                            ? sections.history
+                            : const [],
+                      );
+
+                      addSection(
+                        title: 'Clôturés',
+                        subtitle:
+                            'Demandes refusées ou rendez-vous annulés',
+                        icon: Icons.event_busy_outlined,
+                        items: showAll ||
+                                filters.filter ==
+                                    AppointmentsViewFilter.cancelled
+                            ? sections.cancelled
+                            : const [],
+                      );
+
+                      return Column(children: widgets);
                     },
                     loading: () => const Padding(
                       padding: EdgeInsets.only(top: 24),
@@ -235,13 +324,40 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
       ),
     );
   }
+}
 
-  void _openDetail(BuildContext context, String appointmentId) {
-    Navigator.of(context).pushNamed(
-      AppRoutes.appointmentDetail,
-      arguments: AppointmentDetailArgs(
-        appointmentId: appointmentId,
-      ),
+class _AppointmentsSections {
+  const _AppointmentsSections({
+    required this.pending,
+    required this.upcoming,
+    required this.history,
+    required this.cancelled,
+  });
+
+  final List<Appointment> pending;
+  final List<Appointment> upcoming;
+  final List<Appointment> history;
+  final List<Appointment> cancelled;
+
+  factory _AppointmentsSections.fromItems(List<Appointment> items) {
+    final pending = items.where(AppointmentUiHelpers.isPending).toList()
+      ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+    final upcoming =
+        items.where(AppointmentUiHelpers.isUpcomingConfirmed).toList()
+          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+    final history = items.where(AppointmentUiHelpers.isHistory).toList()
+      ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    final cancelled = items.where(AppointmentUiHelpers.isClosed).toList()
+      ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    return _AppointmentsSections(
+      pending: List<Appointment>.unmodifiable(pending),
+      upcoming: List<Appointment>.unmodifiable(upcoming),
+      history: List<Appointment>.unmodifiable(history),
+      cancelled: List<Appointment>.unmodifiable(cancelled),
     );
   }
 }
@@ -275,7 +391,7 @@ class _AppointmentsStatsBar extends StatelessWidget {
         spacing: 8,
         runSpacing: 8,
         children: [
-          _StatChip(label: '$totalCount rendez-vous'),
+          _StatChip(label: '$totalCount total'),
           _StatChip(label: '$pendingCount en attente'),
           _StatChip(label: '$upcomingConfirmedCount à venir'),
           _StatChip(label: '$confirmedCount confirmés'),
@@ -351,9 +467,11 @@ class _ReminderInfoBanner extends StatelessWidget {
 class _NextAppointmentCard extends StatelessWidget {
   const _NextAppointmentCard({
     required this.appointment,
+    required this.onTap,
   });
 
   final Appointment appointment;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -361,44 +479,53 @@ class _NextAppointmentCard extends StatelessWidget {
 
     return Card(
       color: colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.schedule_outlined,
-              color: colorScheme.onPrimaryContainer,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Prochain rendez-vous',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: colorScheme.onPrimaryContainer,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${appointment.practitionerName} • ${appointment.specialty}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onPrimaryContainer,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${AppDateFormatters.formatShortDate(appointment.day)} à ${appointment.slot}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onPrimaryContainer,
-                        ),
-                  ),
-                ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.schedule_outlined,
+                color: colorScheme.onPrimaryContainer,
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Prochain rendez-vous',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${appointment.practitionerName} • ${appointment.specialty}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${AppDateFormatters.formatShortDate(appointment.day)} à ${appointment.slot}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right,
+                color: colorScheme.onPrimaryContainer,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -513,6 +640,47 @@ class _StatChip extends StatelessWidget {
   }
 }
 
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: textTheme.titleMedium),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AppointmentCard extends StatelessWidget {
   const _AppointmentCard({
     required this.appointment,
@@ -531,7 +699,9 @@ class _AppointmentCard extends StatelessWidget {
         '${AppDateFormatters.formatShortDate(appointment.day)} à ${appointment.slot}\n${appointment.fullAddress}';
 
     return Card(
-      color: highlight ? colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
+      color: highlight
+          ? colorScheme.primaryContainer.withValues(alpha: 0.35)
+          : null,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
@@ -575,6 +745,11 @@ class _AppointmentCard extends StatelessWidget {
                             color: colorScheme.onSurfaceVariant,
                           ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      appointment.reason,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -582,6 +757,11 @@ class _AppointmentCard extends StatelessWidget {
                       children: [
                         AppointmentStatusBadge(status: appointment.status),
                         AppointmentTemporalBadge(appointment: appointment),
+                        AppointmentMiniBadge(
+                          label: AppointmentUiHelpers.patientSectionLabel(
+                            appointment,
+                          ),
+                        ),
                         if (AppDateFormatters.isToday(appointment.scheduledAt))
                           const AppointmentMiniBadge(label: 'Aujourd’hui')
                         else if (AppDateFormatters.isTomorrow(
