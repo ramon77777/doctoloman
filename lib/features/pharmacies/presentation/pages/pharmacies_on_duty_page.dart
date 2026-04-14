@@ -20,8 +20,6 @@ class PharmaciesPage extends ConsumerStatefulWidget {
 }
 
 class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
-  //static const double _nearbyRadiusKm = 5.0;
-
   bool _didInit = false;
   late final TextEditingController _qCtrl;
 
@@ -278,8 +276,9 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
                               icon: const Icon(Icons.close),
                             ),
                     ),
-                    onChanged: (value) =>
-                        ref.read(pharmacyFiltersProvider.notifier).setQuery(value),
+                    onChanged: (value) => ref
+                        .read(pharmacyFiltersProvider.notifier)
+                        .setQuery(value),
                   ),
                   const SizedBox(height: 10),
                   pharmaciesAsync.maybeWhen(
@@ -384,7 +383,33 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
                           ),
                         ),
                       ],
-                      if (filters.useMyLocation && view.nearbyItems.isNotEmpty) ...[
+                      if (filters.useMyLocation &&
+                          view.hasDistanceData &&
+                          view.nearbyItems.isEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.near_me_outlined, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Aucune pharmacie trouvée à moins de 5 km. Voici les autres résultats classés par distance.',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (filters.useMyLocation &&
+                          view.nearbyItems.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         const _SectionTitle(
                           title: 'Pharmacies proches',
@@ -659,14 +684,11 @@ class _PharmacyTileCard extends StatelessWidget {
   final bool isNear;
   final String? distanceLabel;
 
+  bool get _isOpen24h => pharmacy.openingHours.trim().toLowerCase() == '24h/24';
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
-    final subtitle = showDistance && distanceLabel != null
-        ? '${pharmacy.address}\n$distanceLabel'
-        : pharmacy.address;
-
     final hasCoordinates =
         pharmacy.latitude != null && pharmacy.longitude != null;
 
@@ -694,12 +716,33 @@ class _PharmacyTileCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            subtitle,
+                            pharmacy.locationLabel,
                             style:
                                 Theme.of(context).textTheme.bodyMedium?.copyWith(
                                       color: cs.onSurfaceVariant,
                                     ),
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            pharmacy.address,
+                            style:
+                                Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                          ),
+                          if (showDistance && distanceLabel != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              distanceLabel!,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
@@ -708,6 +751,8 @@ class _PharmacyTileCard extends StatelessWidget {
                               if (isNear) const _MiniBadge(label: 'Proche'),
                               if (pharmacy.isOnDuty)
                                 const _MiniBadge(label: 'Garde'),
+                              if (_isOpen24h)
+                                const _MiniBadge(label: '24h/24'),
                             ],
                           ),
                         ],
