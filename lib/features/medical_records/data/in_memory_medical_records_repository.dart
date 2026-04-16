@@ -3,24 +3,41 @@ import '../domain/medical_record.dart';
 import '../domain/medical_records_repository.dart';
 
 class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
-  InMemoryMedicalRecordsRepository(this._localStorage);
+  InMemoryMedicalRecordsRepository(
+    this._localStorage, {
+    required String patientKey,
+  }) : _patientKey = _normalizePatientKey(patientKey);
 
   final MedicalRecordsLocalStorage _localStorage;
+  final String _patientKey;
 
   List<MedicalRecord>? _cache;
 
   Future<List<MedicalRecord>> _loadItems() async {
-    _cache ??= await _localStorage.readAll();
+    if (_patientKey.isEmpty) {
+      return const <MedicalRecord>[];
+    }
+
+    _cache ??= await _localStorage.readAllByPatient(_patientKey);
     return _cache!;
   }
 
   Future<void> _persist(List<MedicalRecord> items) async {
+    if (_patientKey.isEmpty) {
+      _cache = const <MedicalRecord>[];
+      return;
+    }
+
     _cache = List<MedicalRecord>.unmodifiable(items);
-    await _localStorage.saveAll(_cache!);
+    await _localStorage.saveAllByPatient(_patientKey, _cache!);
   }
 
   String _normalizeId(String value) {
     return value.trim();
+  }
+
+  static String _normalizePatientKey(String value) {
+    return value.replaceAll(RegExp(r'\D'), '');
   }
 
   @override
@@ -81,7 +98,12 @@ class InMemoryMedicalRecordsRepository implements MedicalRecordsRepository {
 
   @override
   Future<void> clear() async {
-    _cache = <MedicalRecord>[];
-    await _localStorage.clear();
+    _cache = const <MedicalRecord>[];
+
+    if (_patientKey.isEmpty) {
+      return;
+    }
+
+    await _localStorage.clearByPatient(_patientKey);
   }
 }

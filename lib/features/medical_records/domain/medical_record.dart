@@ -13,6 +13,7 @@ enum MedicalRecordCategory {
 class MedicalRecord {
   MedicalRecord({
     required String id,
+    required String patientId,
     required String title,
     required this.category,
     required DateTime recordDate,
@@ -23,6 +24,7 @@ class MedicalRecord {
     required this.isSensitive,
     String? description,
   })  : id = _cleanText(id),
+        patientId = _cleanText(patientId),
         title = _cleanText(title),
         recordDate = _normalizeDate(recordDate),
         createdAt = createdAt,
@@ -32,6 +34,7 @@ class MedicalRecord {
         description = _cleanNullableMultilineText(description);
 
   final String id;
+  final String patientId;
   final String title;
   final MedicalRecordCategory category;
   final DateTime recordDate;
@@ -60,6 +63,7 @@ class MedicalRecord {
 
   MedicalRecord copyWith({
     String? id,
+    String? patientId,
     String? title,
     MedicalRecordCategory? category,
     DateTime? recordDate,
@@ -72,6 +76,7 @@ class MedicalRecord {
   }) {
     return MedicalRecord(
       id: id ?? this.id,
+      patientId: patientId ?? this.patientId,
       title: title ?? this.title,
       category: category ?? this.category,
       recordDate: recordDate ?? this.recordDate,
@@ -87,6 +92,7 @@ class MedicalRecord {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'patientId': patientId,
       'title': title,
       'category': category.name,
       'recordDate': recordDate.toIso8601String(),
@@ -102,6 +108,7 @@ class MedicalRecord {
   factory MedicalRecord.fromMap(Map<String, dynamic> map) {
     return MedicalRecord(
       id: (map['id'] as String?) ?? '',
+      patientId: (map['patientId'] as String?) ?? '',
       title: (map['title'] as String?) ?? '',
       category: _categoryFromString(map['category'] as String?),
       recordDate: _parseDateOrNow(map['recordDate']),
@@ -169,6 +176,7 @@ class MedicalRecord {
 
     return other is MedicalRecord &&
         other.id == id &&
+        other.patientId == patientId &&
         other.title == title &&
         other.category == category &&
         other.recordDate == recordDate &&
@@ -184,6 +192,7 @@ class MedicalRecord {
   int get hashCode {
     return Object.hash(
       id,
+      patientId,
       title,
       category,
       recordDate,
@@ -198,6 +207,11 @@ class MedicalRecord {
 
   @override
   String toString() {
-    return 'MedicalRecord(id: $id, title: $title, category: $category)';
+    return 'MedicalRecord('
+        'id: $id, '
+        'patientId: $patientId, '
+        'title: $title, '
+        'category: $category'
+        ')';
   }
 }

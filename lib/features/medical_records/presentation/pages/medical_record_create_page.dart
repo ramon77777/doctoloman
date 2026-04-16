@@ -42,6 +42,34 @@ class _MedicalRecordCreatePageState
     return null;
   }
 
+  String _normalizePatientId({
+    required String rawId,
+    required String rawPhone,
+  }) {
+    final cleanedId = rawId.trim();
+    if (cleanedId.isNotEmpty) {
+      return cleanedId;
+    }
+
+    final phoneDigits = rawPhone.replaceAll(RegExp(r'\D'), '');
+    if (phoneDigits.isNotEmpty) {
+      return phoneDigits;
+    }
+
+    return 'patient_inconnu';
+  }
+
+  String _cleanText(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _cleanMultilineText(String value) {
+    return value
+        .trim()
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+  }
+
   Future<void> _pickRecordDate() async {
     final now = DateTime.now();
 
@@ -64,9 +92,15 @@ class _MedicalRecordCreatePageState
     if (!isValid || _isSaving) return;
 
     final user = ref.read(authControllerProvider).user;
+
     final patientName = user?.name.trim().isNotEmpty == true
         ? user!.name.trim()
         : 'Utilisateur';
+
+    final patientId = _normalizePatientId(
+      rawId: user?.id ?? '',
+      rawPhone: user?.phone ?? '',
+    );
 
     FocusScope.of(context).unfocus();
     setState(() => _isSaving = true);
@@ -75,15 +109,20 @@ class _MedicalRecordCreatePageState
 
     final record = MedicalRecord(
       id: 'mr_${now.microsecondsSinceEpoch}',
-      title: _titleCtrl.text.trim(),
+      patientId: patientId,
+      title: _cleanText(_titleCtrl.text),
       category: _category,
-      recordDate: _recordDate,
+      recordDate: DateTime(
+        _recordDate.year,
+        _recordDate.month,
+        _recordDate.day,
+      ),
       createdAt: now,
       patientName: patientName,
-      sourceLabel: _sourceCtrl.text.trim(),
-      summary: _summaryCtrl.text.trim(),
+      sourceLabel: _cleanText(_sourceCtrl.text),
+      summary: _cleanMultilineText(_summaryCtrl.text),
       isSensitive: _isSensitive,
-      description: _summaryCtrl.text.trim(),
+      description: _cleanMultilineText(_summaryCtrl.text),
     );
 
     try {

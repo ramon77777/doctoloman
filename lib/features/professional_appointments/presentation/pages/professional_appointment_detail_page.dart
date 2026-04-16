@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/router/app_routes.dart';
+import '../../../../app/router/route_args.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../../core/models/app_user.dart';
 import '../../../../core/ui/info_widgets.dart';
 import '../../../../core/utils/string_normalizers.dart';
+import '../../../appointment_reports/presentation/providers/appointment_reports_providers.dart';
 import '../../../appointments/domain/appointment.dart';
 import '../../../appointments/presentation/helpers/appointment_ui_helpers.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
@@ -84,6 +87,28 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
     );
   }
 
+  void _openReport(BuildContext context, Appointment appointment) {
+    if (appointment.status != AppointmentStatus.confirmed) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Le bilan n’est accessible qu’après confirmation du rendez-vous.',
+            ),
+          ),
+        );
+      return;
+    }
+
+    Navigator.of(context).pushNamed(
+      AppRoutes.professionalAppointmentReport,
+      arguments: ProfessionalAppointmentReportArgs(
+        appointmentId: appointment.id,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final normalizedId = appointmentId.trim();
@@ -148,12 +173,19 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
               );
             }
 
+            final reportAsync = ref.watch(
+              appointmentReportByAppointmentIdProvider(appointment.id),
+            );
+
             final canConfirm =
                 AppointmentUiHelpers.canProfessionalConfirm(appointment);
             final canDecline =
                 AppointmentUiHelpers.canProfessionalDecline(appointment);
             final canCancelConfirmed =
                 AppointmentUiHelpers.canProfessionalCancelConfirmed(appointment);
+
+            final canWriteReport =
+                appointment.status == AppointmentStatus.confirmed;
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -166,6 +198,41 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                   canConfirm: canConfirm,
                   canDecline: canDecline,
                   canCancelConfirmed: canCancelConfirmed,
+                ),
+                const SizedBox(height: 14),
+                reportAsync.when(
+                  data: (report) => _ReportStatusCard(
+                    hasReport: report != null,
+                    updatedAt: report?.updatedAt,
+                    onOpen: canWriteReport
+                        ? () => _openReport(context, appointment)
+                        : null,
+                  ),
+                  loading: () => const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text('Chargement du bilan...'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  error: (_, _) => _ReportStatusCard(
+                    hasReport: false,
+                    updatedAt: null,
+                    onOpen: canWriteReport
+                        ? () => _openReport(context, appointment)
+                        : null,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 InfoSectionCard(
@@ -251,6 +318,38 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
+                if (canWriteReport)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: () => _openReport(context, appointment),
+                      icon: const Icon(Icons.edit_note_outlined),
+                      label: const Text('Rédiger / modifier le bilan'),
+                    ),
+                  ),
+                if (!canWriteReport)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lock_clock_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Le bilan ne peut être saisi que lorsque le rendez-vous est confirmé.',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 _ProfessionalActionsSection(
                   canConfirm: canConfirm,
                   canDecline: canDecline,
@@ -303,6 +402,82 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
           error: (error, _) => ErrorStateView(
             message: 'Erreur : $error',
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportStatusCard extends StatelessWidget {
+  const _ReportStatusCard({
+    required this.hasReport,
+    required this.updatedAt,
+    required this.onOpen,
+  });
+
+  final bool hasReport;
+  final DateTime? updatedAt;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final message = hasReport
+        ? 'Un bilan est déjà enregistré pour ce rendez-vous.'
+        : 'Aucun bilan n’a encore été saisi pour ce rendez-vous.';
+
+    final updatedLabel = updatedAt == null
+        ? null
+        : 'Dernière mise à jour : ${updatedAt!.day.toString().padLeft(2, '0')}/${updatedAt!.month.toString().padLeft(2, '0')}/${updatedAt!.year} à ${updatedAt!.hour.toString().padLeft(2, '0')}:${updatedAt!.minute.toString().padLeft(2, '0')}';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              hasReport ? Icons.task_alt_outlined : Icons.edit_note_outlined,
+              color: cs.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Bilan du rendez-vous',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                  ),
+                  if (updatedLabel != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      updatedLabel,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (onOpen != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: hasReport ? 'Modifier le bilan' : 'Créer le bilan',
+                onPressed: onOpen,
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ],
         ),
       ),
     );

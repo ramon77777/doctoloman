@@ -75,3 +75,23 @@ class ProfessionalAppointmentDetailArgs {
 
   final String appointmentId;
 }
+
+@immutable
+class ProfessionalPatientMedicalRecordsArgs {
+  const ProfessionalPatientMedicalRecordsArgs({
+    required this.patientId,
+    required this.patientName,
+  });
+
+  final String patientId;
+  final String patientName;
+}
+
+@immutable
+class ProfessionalAppointmentReportArgs {
+  const ProfessionalAppointmentReportArgs({
+    required this.appointmentId,
+  });
+
+  final String appointmentId;
+}

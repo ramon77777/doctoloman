@@ -1,23 +1,33 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/models/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../medical_access/presentation/providers/medical_access_providers.dart';
 import '../../data/in_memory_medical_records_repository.dart';
 import '../../data/medical_records_local_storage.dart';
 import '../../domain/medical_record.dart';
 import '../../domain/medical_records_repository.dart';
 
-final medicalRecordsLocalStorageProvider = Provider<MedicalRecordsLocalStorage>(
+final medicalRecordsLocalStorageProvider =
+    Provider<MedicalRecordsLocalStorage>(
   (ref) => MedicalRecordsLocalStorage(
     ref.watch(sharedPreferencesProvider),
   ),
   name: 'medicalRecordsLocalStorageProvider',
 );
 
-final medicalRecordsRepositoryProvider = Provider<MedicalRecordsRepository>(
-  (ref) => InMemoryMedicalRecordsRepository(
-    ref.watch(medicalRecordsLocalStorageProvider),
-  ),
+final medicalRecordsRepositoryProvider =
+    Provider<MedicalRecordsRepository>(
+  (ref) {
+    final authUser = ref.watch(authControllerProvider).user;
+    final patientKey = _normalizePatientStorageKey(authUser?.phone ?? '');
+
+    return InMemoryMedicalRecordsRepository(
+      ref.watch(medicalRecordsLocalStorageProvider),
+      patientKey: patientKey,
+    );
+  },
   name: 'medicalRecordsRepositoryProvider',
 );
 
@@ -65,8 +75,6 @@ class MedicalRecordsFilters {
 
   @override
   bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-
     return other is MedicalRecordsFilters &&
         other.category == category &&
         other.query == query &&
@@ -85,7 +93,8 @@ class MedicalRecordsFilters {
 
 class MedicalRecordsFiltersController
     extends StateNotifier<MedicalRecordsFilters> {
-  MedicalRecordsFiltersController() : super(MedicalRecordsFilters.initial);
+  MedicalRecordsFiltersController()
+      : super(MedicalRecordsFilters.initial);
 
   void setCategory(MedicalRecordCategory? value) {
     if (value == null) {
@@ -137,6 +146,15 @@ final medicalRecordsFiltersProvider = StateNotifierProvider<
 
 final medicalRecordsListProvider = FutureProvider<List<MedicalRecord>>(
   (ref) async {
+    final authState = ref.watch(authControllerProvider);
+    final authUser = authState.user;
+
+    if (!authState.isAuthenticated ||
+        authUser == null ||
+        authUser.role != AppUserRole.patient) {
+      return const <MedicalRecord>[];
+    }
+
     final repo = ref.watch(medicalRecordsRepositoryProvider);
     final items = await repo.listAll();
 
@@ -147,6 +165,52 @@ final medicalRecordsListProvider = FutureProvider<List<MedicalRecord>>(
   },
   name: 'medicalRecordsListProvider',
 );
+
+final medicalRecordsByPatientIdProvider =
+    FutureProvider.family<List<MedicalRecord>, String>((ref, patientId) async {
+  final authState = ref.watch(authControllerProvider);
+  final authUser = authState.user;
+
+  if (!authState.isAuthenticated || authUser == null) {
+    return const <MedicalRecord>[];
+  }
+
+  final normalizedPatientId = _normalizePatientStorageKey(patientId);
+  if (normalizedPatientId.isEmpty) {
+    return const <MedicalRecord>[];
+  }
+
+  if (authUser.role == AppUserRole.patient) {
+    final currentPatientId = _normalizePatientStorageKey(authUser.phone);
+    if (currentPatientId.isEmpty || currentPatientId != normalizedPatientId) {
+      return const <MedicalRecord>[];
+    }
+  } else if (authUser.role == AppUserRole.professional) {
+    final access = ref.watch(
+      activeMedicalAccessForCurrentProfessionalByPatientIdProvider(
+        normalizedPatientId,
+      ),
+    );
+
+    if (access == null || !access.isActive) {
+      return const <MedicalRecord>[];
+    }
+  } else {
+    return const <MedicalRecord>[];
+  }
+
+  final localStorage = ref.watch(medicalRecordsLocalStorageProvider);
+  final repo = InMemoryMedicalRecordsRepository(
+    localStorage,
+    patientKey: normalizedPatientId,
+  );
+
+  final items = await repo.listAll();
+  final sorted = [...items]
+    ..sort((a, b) => b.recordDate.compareTo(a.recordDate));
+
+  return List<MedicalRecord>.unmodifiable(sorted);
+}, name: 'medicalRecordsByPatientIdProvider');
 
 final filteredMedicalRecordsProvider = Provider<List<MedicalRecord>>(
   (ref) {
@@ -194,6 +258,15 @@ final filteredMedicalRecordsProvider = Provider<List<MedicalRecord>>(
 
 final medicalRecordByIdProvider =
     FutureProvider.family<MedicalRecord?, String>((ref, id) async {
+  final authState = ref.watch(authControllerProvider);
+  final authUser = authState.user;
+
+  if (!authState.isAuthenticated ||
+      authUser == null ||
+      authUser.role != AppUserRole.patient) {
+    return null;
+  }
+
   final normalizedId = id.trim();
   if (normalizedId.isEmpty) {
     return null;
@@ -203,7 +276,8 @@ final medicalRecordByIdProvider =
   return repo.getById(normalizedId);
 }, name: 'medicalRecordByIdProvider');
 
-final medicalRecordsControllerProvider = Provider<MedicalRecordsController>(
+final medicalRecordsControllerProvider =
+    Provider<MedicalRecordsController>(
   (ref) {
     final repo = ref.watch(medicalRecordsRepositoryProvider);
     return MedicalRecordsController(
@@ -228,21 +302,29 @@ class MedicalRecordsController {
     await _repo.create(record);
     _invalidateCollections();
     _invalidateRecord(record.id);
+    _invalidatePatientCollection(record.patientId);
   }
 
   Future<void> update(MedicalRecord record) async {
     await _repo.update(record);
     _invalidateCollections();
     _invalidateRecord(record.id);
+    _invalidatePatientCollection(record.patientId);
   }
 
   Future<void> deleteById(String id) async {
     final normalizedId = id.trim();
     if (normalizedId.isEmpty) return;
 
+    final existing = await _repo.getById(normalizedId);
+
     await _repo.deleteById(normalizedId);
     _invalidateCollections();
     _invalidateRecord(normalizedId);
+
+    if (existing != null) {
+      _invalidatePatientCollection(existing.patientId);
+    }
   }
 
   Future<void> clear() async {
@@ -253,6 +335,7 @@ class MedicalRecordsController {
 
     for (final item in items) {
       _invalidateRecord(item.id);
+      _invalidatePatientCollection(item.patientId);
     }
   }
 
@@ -268,6 +351,12 @@ class MedicalRecordsController {
 
   void _invalidateRecord(String id) {
     _ref.invalidate(medicalRecordByIdProvider(id));
+  }
+
+  void _invalidatePatientCollection(String patientId) {
+    final normalizedPatientId = patientId.trim();
+    if (normalizedPatientId.isEmpty) return;
+    _ref.invalidate(medicalRecordsByPatientIdProvider(normalizedPatientId));
   }
 }
 
@@ -298,7 +387,8 @@ int _compareMedicalRecords({
     case MedicalRecordsSortMode.oldestFirst:
       return a.recordDate.compareTo(b.recordDate);
     case MedicalRecordsSortMode.titleAsc:
-      final byTitle = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      final byTitle =
+          a.title.toLowerCase().compareTo(b.title.toLowerCase());
       if (byTitle != 0) return byTitle;
       return b.recordDate.compareTo(a.recordDate);
   }
@@ -314,4 +404,8 @@ String _normalizeSearch(String value) {
       .toLowerCase()
       .replaceAll('’', "'")
       .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+String _normalizePatientStorageKey(String value) {
+  return value.replaceAll(RegExp(r'\D'), '');
 }

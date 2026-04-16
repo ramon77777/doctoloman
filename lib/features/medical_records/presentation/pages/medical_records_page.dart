@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/router/app_routes.dart';
 import '../../../../app/router/route_args.dart';
+import '../../../medical_access/presentation/providers/medical_access_providers.dart';
 import '../../domain/medical_record.dart';
 import '../providers/medical_records_providers.dart';
 
@@ -31,6 +32,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
 
   Future<void> _refresh() async {
     ref.invalidate(medicalRecordsListProvider);
+    ref.invalidate(medicalAccessListProvider);
     await ref.read(medicalRecordsListProvider.future);
   }
 
@@ -53,11 +55,20 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
     );
   }
 
+  void _openAccessHistory(BuildContext context) {
+    Navigator.of(context).pushNamed(AppRoutes.medicalAccessAuditHistory);
+  }
+
+  void _openAccessManagement(BuildContext context) {
+    Navigator.of(context).pushNamed(AppRoutes.patientMedicalAccess);
+  }
+
   @override
   Widget build(BuildContext context) {
     final recordsAsync = ref.watch(medicalRecordsListProvider);
     final filteredItems = ref.watch(filteredMedicalRecordsProvider);
     final filters = ref.watch(medicalRecordsFiltersProvider);
+    final patientAccesses = ref.watch(patientMedicalAccessProvider);
 
     _syncQueryControllerIfNeeded(filters.query);
 
@@ -66,8 +77,21 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
         title: const Text('Mes documents médicaux'),
         actions: [
           IconButton(
+            tooltip: 'Gérer les autorisations',
+            onPressed: () => _openAccessManagement(context),
+            icon: const Icon(Icons.admin_panel_settings_outlined),
+          ),
+          IconButton(
+            tooltip: 'Historique des accès',
+            onPressed: () => _openAccessHistory(context),
+            icon: const Icon(Icons.manage_history_outlined),
+          ),
+          IconButton(
             tooltip: 'Rafraîchir',
-            onPressed: () => ref.invalidate(medicalRecordsListProvider),
+            onPressed: () {
+              ref.invalidate(medicalRecordsListProvider);
+              ref.invalidate(medicalAccessListProvider);
+            },
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -82,22 +106,12 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
       body: SafeArea(
         child: recordsAsync.when(
           data: (allItems) {
-            if (allItems.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: _refresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: const [
-                    SizedBox(height: 120),
-                    _EmptyRecordsState(),
-                  ],
-                ),
-              );
-            }
-
             final sensitiveCount =
                 allItems.where((item) => item.isSensitive).length;
-            final latestRecord = allItems.first;
+            final reportCount = allItems
+                .where((item) => item.category == MedicalRecordCategory.report)
+                .length;
+            final latestRecord = allItems.isEmpty ? null : allItems.first;
             final groupedItems = _groupMedicalRecords(filteredItems);
 
             return RefreshIndicator(
@@ -107,14 +121,21 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                 children: [
                   const _InfoBanner(
                     text:
-                        'Dans cette version, les documents médicaux mock sont stockés localement sur l’appareil.',
+                        'Dans cette version, les documents médicaux mock sont stockés localement sur l’appareil. Les bilans de rendez-vous apparaissent ici lorsqu’ils sont rattachés au dossier médical du patient.',
+                  ),
+                  const SizedBox(height: 14),
+                  _AccessManagementCard(
+                    activeAccessCount: patientAccesses.length,
+                    onManage: () => _openAccessManagement(context),
+                    onOpenHistory: () => _openAccessHistory(context),
                   ),
                   const SizedBox(height: 14),
                   _RecordsOverviewCard(
                     totalCount: allItems.length,
                     filteredCount: filteredItems.length,
                     sensitiveCount: sensitiveCount,
-                    latestRecordDate: latestRecord.recordDate,
+                    reportCount: reportCount,
+                    latestRecordDate: latestRecord?.recordDate,
                   ),
                   const SizedBox(height: 14),
                   Card(
@@ -127,7 +148,8 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                             textInputAction: TextInputAction.search,
                             decoration: InputDecoration(
                               labelText: 'Rechercher un document',
-                              hintText: 'Titre, source, résumé...',
+                              hintText:
+                                  'Titre, source, résumé, bilan, professionnel...',
                               prefixIcon: const Icon(Icons.search),
                               suffixIcon: filters.query.trim().isEmpty
                                   ? null
@@ -198,11 +220,13 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                   const _SectionTitle(
                     title: 'Documents disponibles',
                     subtitle:
-                        'Consultez vos documents enregistrés localement',
+                        'Ordonnances, analyses, imagerie, certificats et bilans de rendez-vous',
                     icon: Icons.folder_open_outlined,
                   ),
                   const SizedBox(height: 10),
-                  if (filteredItems.isEmpty)
+                  if (allItems.isEmpty)
+                    const _EmptyRecordsState()
+                  else if (filteredItems.isEmpty)
                     const _EmptyFilteredState()
                   else
                     ...groupedItems.entries.map(
@@ -221,7 +245,10 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
           ),
           error: (error, _) => _ErrorState(
             message: '$error',
-            onRetry: () => ref.invalidate(medicalRecordsListProvider),
+            onRetry: () {
+              ref.invalidate(medicalRecordsListProvider);
+              ref.invalidate(medicalAccessListProvider);
+            },
           ),
         ),
       ),
@@ -253,10 +280,82 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Compte rendu';
+        return 'Bilan / compte rendu';
       case MedicalRecordCategory.other:
         return 'Autre';
     }
+  }
+}
+
+class _AccessManagementCard extends StatelessWidget {
+  const _AccessManagementCard({
+    required this.activeAccessCount,
+    required this.onManage,
+    required this.onOpenHistory,
+  });
+
+  final int activeAccessCount;
+  final VoidCallback onManage;
+  final VoidCallback onOpenHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final description = activeAccessCount == 0
+        ? 'Aucun professionnel n’a actuellement accès à votre dossier. Vous pouvez autoriser un professionnel depuis cet écran.'
+        : '$activeAccessCount accès actif(s) à votre dossier. Vous pouvez autoriser un nouveau professionnel, révoquer un accès ou consulter l’historique.';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.admin_panel_settings_outlined,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Accès à mon dossier',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: onManage,
+                        icon: const Icon(Icons.lock_open_outlined),
+                        label: const Text('Gérer les autorisations'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onOpenHistory,
+                        icon: const Icon(Icons.manage_history_outlined),
+                        label: const Text('Voir l’historique'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -571,7 +670,7 @@ class _MedicalRecordsFiltersSheetState
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Compte rendu';
+        return 'Bilan / compte rendu';
       case MedicalRecordCategory.other:
         return 'Autre';
     }
@@ -594,13 +693,15 @@ class _RecordsOverviewCard extends StatelessWidget {
     required this.totalCount,
     required this.filteredCount,
     required this.sensitiveCount,
+    required this.reportCount,
     required this.latestRecordDate,
   });
 
   final int totalCount;
   final int filteredCount;
   final int sensitiveCount;
-  final DateTime latestRecordDate;
+  final int reportCount;
+  final DateTime? latestRecordDate;
 
   @override
   Widget build(BuildContext context) {
@@ -625,8 +726,11 @@ class _RecordsOverviewCard extends StatelessWidget {
                 _MiniBadge(label: '$totalCount document(s) total'),
                 _MiniBadge(label: '$filteredCount affiché(s)'),
                 _MiniBadge(label: '$sensitiveCount sensible(s)'),
+                _MiniBadge(label: '$reportCount bilan(s)'),
                 _MiniBadge(
-                  label: 'Dernier : ${_formatDate(latestRecordDate)}',
+                  label: latestRecordDate == null
+                      ? 'Dernier : —'
+                      : 'Dernier : ${_formatDate(latestRecordDate!)}',
                 ),
               ],
             ),
@@ -705,7 +809,7 @@ class _MedicalRecordCard extends StatelessWidget {
       case MedicalRecordCategory.certificate:
         return Icons.verified_outlined;
       case MedicalRecordCategory.report:
-        return Icons.article_outlined;
+        return Icons.description_outlined;
       case MedicalRecordCategory.other:
         return Icons.description_outlined;
     }
@@ -722,7 +826,7 @@ class _MedicalRecordCard extends StatelessWidget {
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Compte rendu';
+        return 'Bilan / compte rendu';
       case MedicalRecordCategory.other:
         return 'Document';
     }
@@ -731,6 +835,7 @@ class _MedicalRecordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isReport = record.category == MedicalRecordCategory.report;
 
     return Card(
       child: InkWell(
@@ -785,6 +890,7 @@ class _MedicalRecordCard extends StatelessWidget {
                       children: [
                         _MiniBadge(label: _categoryLabel(record.category)),
                         _MiniBadge(label: _formatDate(record.recordDate)),
+                        if (isReport) const _MiniBadge(label: 'Rendez-vous'),
                         if (record.isSensitive)
                           const _MiniBadge(label: 'Sensible'),
                       ],
@@ -885,7 +991,7 @@ class _EmptyRecordsState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Ajoute un document médical pour commencer.',
+              'Ajoute un document médical ou attends qu’un bilan de rendez-vous soit rattaché à ton dossier.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

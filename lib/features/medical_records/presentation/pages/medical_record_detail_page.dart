@@ -90,6 +90,36 @@ class MedicalRecordDetailPage extends ConsumerWidget {
     Navigator.of(context).pop();
   }
 
+  String? _linkedAppointmentId(MedicalRecord record) {
+    if (record.category != MedicalRecordCategory.report) {
+      return null;
+    }
+
+    final normalizedId = record.id.trim();
+    const prefix = 'report_';
+
+    if (!normalizedId.startsWith(prefix)) {
+      return null;
+    }
+
+    final appointmentId = normalizedId.substring(prefix.length).trim();
+    if (appointmentId.isEmpty) {
+      return null;
+    }
+
+    return appointmentId;
+  }
+
+  void _openLinkedAppointment(
+    BuildContext context,
+    String appointmentId,
+  ) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.appointmentDetail,
+      arguments: AppointmentDetailArgs(appointmentId: appointmentId),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final normalizedId = recordId.trim();
@@ -111,42 +141,76 @@ class MedicalRecordDetailPage extends ConsumerWidget {
 
     final recordAsync = ref.watch(medicalRecordByIdProvider(normalizedId));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Détail du document'),
-        actions: [
-          IconButton(
-            tooltip: 'Modifier',
-            onPressed: () {
-              Navigator.of(context).pushNamed(
-                AppRoutes.medicalRecordEdit,
-                arguments: MedicalRecordEditArgs(recordId: normalizedId),
-              );
-            },
-            icon: const Icon(Icons.edit_outlined),
+    return recordAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(
+          title: const Text('Détail du document'),
+        ),
+        body: const SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(),
           ),
-          IconButton(
-            tooltip: 'Supprimer',
-            onPressed: () => _deleteRecord(context, ref, normalizedId),
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
+        ),
       ),
-      body: SafeArea(
-        child: recordAsync.when(
-          data: (record) {
-            if (record == null) {
-              return const _MessageState(
+      error: (error, _) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Détail du document'),
+        ),
+        body: SafeArea(
+          child: _MessageState(
+            icon: Icons.error_outline,
+            title: 'Erreur',
+            message: '$error',
+          ),
+        ),
+      ),
+      data: (record) {
+        if (record == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Détail du document'),
+            ),
+            body: const SafeArea(
+              child: _MessageState(
                 icon: Icons.search_off_outlined,
                 title: 'Document introuvable',
                 message: 'Ce document n’existe pas ou n’est plus disponible.',
-              );
-            }
+              ),
+            ),
+          );
+        }
 
-            final colorScheme = Theme.of(context).colorScheme;
-            final textTheme = Theme.of(context).textTheme;
+        final colorScheme = Theme.of(context).colorScheme;
+        final textTheme = Theme.of(context).textTheme;
+        final isAppointmentReport =
+            record.category == MedicalRecordCategory.report;
+        final linkedAppointmentId = _linkedAppointmentId(record);
 
-            return ListView(
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Détail du document'),
+            actions: [
+              if (!isAppointmentReport)
+                IconButton(
+                  tooltip: 'Modifier',
+                  onPressed: () {
+                    Navigator.of(context).pushNamed(
+                      AppRoutes.medicalRecordEdit,
+                      arguments: MedicalRecordEditArgs(recordId: normalizedId),
+                    );
+                  },
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+              if (!isAppointmentReport)
+                IconButton(
+                  tooltip: 'Supprimer',
+                  onPressed: () => _deleteRecord(context, ref, normalizedId),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+          body: SafeArea(
+            child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 Card(
@@ -212,6 +276,64 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                   isSensitive: record.isSensitive,
                   createdAt: record.createdAt,
                 ),
+                if (isAppointmentReport) ...[
+                  const SizedBox(height: 14),
+                  const _InfoSectionCard(
+                    title: 'Gestion du document',
+                    icon: Icons.lock_outline,
+                    children: [
+                      Text(
+                        'Ce document provient d’un bilan de rendez-vous saisi par un professionnel de santé. Il ne peut pas être modifié ou supprimé directement depuis le dossier médical du patient.',
+                      ),
+                    ],
+                  ),
+                ],
+                if (linkedAppointmentId != null) ...[
+                  const SizedBox(height: 14),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.event_note_outlined,
+                                size: 20,
+                                color: colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Rendez-vous lié',
+                                style: textTheme.titleMedium,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Ce document est issu d’un bilan de rendez-vous. Vous pouvez revenir au rendez-vous d’origine.',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openLinkedAppointment(
+                                context,
+                                linkedAppointmentId,
+                              ),
+                              icon: const Icon(Icons.open_in_new_outlined),
+                              label: const Text('Voir le rendez-vous lié'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 _InfoSectionCard(
                   title: 'Informations',
@@ -235,8 +357,10 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 14),
                 _InfoSectionCard(
-                  title: 'Résumé',
-                  icon: Icons.notes_outlined,
+                  title: isAppointmentReport ? 'Résumé du bilan' : 'Résumé',
+                  icon: isAppointmentReport
+                      ? Icons.summarize_outlined
+                      : Icons.notes_outlined,
                   children: [
                     Text(
                       record.summary.trim().isEmpty
@@ -246,6 +370,24 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                     ),
                   ],
                 ),
+                if (isAppointmentReport) ...[
+                  const SizedBox(height: 14),
+                  _AppointmentReportDetailsCard(
+                    description: record.description,
+                  ),
+                ] else if (record.hasDescription) ...[
+                  const SizedBox(height: 14),
+                  _InfoSectionCard(
+                    title: 'Description',
+                    icon: Icons.notes_outlined,
+                    children: [
+                      Text(
+                        record.effectiveDescription,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 14),
                 _InfoSectionCard(
                   title: 'Confidentialité',
@@ -265,18 +407,10 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                   ],
                 ),
               ],
-            );
-          },
-          loading: () => const Center(
-            child: CircularProgressIndicator(),
+            ),
           ),
-          error: (error, _) => _MessageState(
-            icon: Icons.error_outline,
-            title: 'Erreur',
-            message: '$error',
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -329,6 +463,73 @@ class _StatusCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AppointmentReportDetailsCard extends StatelessWidget {
+  const _AppointmentReportDetailsCard({
+    required this.description,
+  });
+
+  final String? description;
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = _parseReportSections(description);
+
+    return _InfoSectionCard(
+      title: 'Détails du bilan',
+      icon: Icons.medical_information_outlined,
+      children: [
+        if (sections.isEmpty)
+          Text(
+            'Aucun détail supplémentaire disponible.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          ...sections.map(
+            (section) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _ReportSectionBlock(
+                title: section.title,
+                value: section.value,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ReportSectionBlock extends StatelessWidget {
+  const _ReportSectionBlock({
+    required this.title,
+    required this.value,
+  });
+
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ],
     );
   }
 }
@@ -479,6 +680,53 @@ class _MessageState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ParsedReportSection {
+  const _ParsedReportSection({
+    required this.title,
+    required this.value,
+  });
+
+  final String title;
+  final String value;
+}
+
+List<_ParsedReportSection> _parseReportSections(String? rawDescription) {
+  final raw = rawDescription?.trim() ?? '';
+  if (raw.isEmpty) return const <_ParsedReportSection>[];
+
+  final blocks = raw
+      .split(RegExp(r'\n\s*\n'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty);
+
+  final sections = <_ParsedReportSection>[];
+
+  for (final block in blocks) {
+    final separatorIndex = block.indexOf(':');
+    if (separatorIndex <= 0 || separatorIndex >= block.length - 1) {
+      sections.add(
+        _ParsedReportSection(
+          title: 'Information',
+          value: block,
+        ),
+      );
+      continue;
+    }
+
+    final title = block.substring(0, separatorIndex).trim();
+    final value = block.substring(separatorIndex + 1).trim();
+
+    sections.add(
+      _ParsedReportSection(
+        title: title.isEmpty ? 'Information' : title,
+        value: value.isEmpty ? 'Non renseigné' : value,
+      ),
+    );
+  }
+
+  return sections;
 }
 
 String _formatDate(DateTime d) {

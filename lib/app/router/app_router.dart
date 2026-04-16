@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../../features/appointments/presentation/pages/appointment_detail_page.dart';
+import '../../features/appointment_reports/presentation/pages/professional_appointment_report_page.dart'
+    as professional_report_page;
+import '../../features/appointments/presentation/pages/appointment_detail_page.dart'
+    as patient_appointment_page;
 import '../../features/appointments/presentation/pages/appointments_page.dart';
 import '../../features/auth/presentation/pages/login_phone_page.dart';
 import '../../features/home/presentation/pages/home_entry_page.dart';
 import '../../features/home/presentation/pages/home_public_page.dart';
+import '../../features/medical_access/presentation/pages/medical_access_audit_history_page.dart';
 import '../../features/medical_records/presentation/pages/medical_record_detail_page.dart';
 import '../../features/medical_records/presentation/pages/medical_record_edit_page.dart';
 import '../../features/medical_records/presentation/pages/medical_records_page.dart';
+import '../../features/medical_records/presentation/pages/professional_patient_medical_records_page.dart';
 import '../../features/pharmacies/presentation/pages/pharmacy_detail_page.dart';
-import '../../features/professional_appointments/presentation/pages/professional_appointment_detail_page.dart';
+import '../../features/professional_appointments/presentation/pages/professional_appointment_detail_page.dart'
+    as professional_appointment_page;
 import '../../features/professional_appointments/presentation/pages/professional_appointments_page.dart';
 import '../../features/search/presentation/pages/practitioner_detail_page.dart';
 import '../../features/search/presentation/pages/search_results_page.dart';
@@ -36,6 +42,12 @@ class AppRouter {
         return _buildMedicalRecordEditRoute(settings);
       case AppRoutes.professionalAppointmentDetail:
         return _buildProfessionalAppointmentDetailRoute(settings);
+      case AppRoutes.professionalPatientMedicalRecords:
+        return _buildProfessionalPatientMedicalRecordsRoute(settings);
+      case AppRoutes.professionalAppointmentReport:
+        return _buildProfessionalAppointmentReportRoute(settings);
+      case AppRoutes.medicalAccessAuditHistory:
+        return _buildMedicalAccessAuditHistoryRoute(settings);
       default:
         return fadeRoute(
           const HomeEntryPage(),
@@ -141,7 +153,9 @@ class AppRouter {
     return fadeRoute(
       RouteGuard(
         access: AppRouteAccess.patientOnly,
-        child: AppointmentDetailPage(appointmentId: args.appointmentId),
+        child: patient_appointment_page.AppointmentDetailPage(
+          appointmentId: args.appointmentId,
+        ),
       ),
       settings: settings,
     );
@@ -206,9 +220,69 @@ class AppRouter {
     return fadeRoute(
       RouteGuard(
         access: AppRouteAccess.professionalOnly,
-        child: ProfessionalAppointmentDetailPage(
+        child: professional_appointment_page.ProfessionalAppointmentDetailPage(
           appointmentId: args.appointmentId,
         ),
+      ),
+      settings: settings,
+    );
+  }
+
+  static Route<dynamic> _buildProfessionalPatientMedicalRecordsRoute(
+    RouteSettings settings,
+  ) {
+    final args = settings.arguments;
+    if (args is! ProfessionalPatientMedicalRecordsArgs) {
+      return fadeRoute(
+        const HomeEntryPage(),
+        settings: settings,
+      );
+    }
+
+    return fadeRoute(
+      RouteGuard(
+        access: AppRouteAccess.professionalOnly,
+        child: ProfessionalPatientMedicalRecordsPage(
+          patientId: args.patientId,
+          patientName: args.patientName,
+        ),
+      ),
+      settings: settings,
+    );
+  }
+
+  static Route<dynamic> _buildProfessionalAppointmentReportRoute(
+    RouteSettings settings,
+  ) {
+    final args = settings.arguments;
+    if (args is! ProfessionalAppointmentReportArgs) {
+      return fadeRoute(
+        const RouteGuard(
+          access: AppRouteAccess.professionalOnly,
+          child: ProfessionalAppointmentsPage(),
+        ),
+        settings: settings,
+      );
+    }
+
+    return fadeRoute(
+      RouteGuard(
+        access: AppRouteAccess.professionalOnly,
+        child: professional_report_page.ProfessionalAppointmentReportPage(
+          appointmentId: args.appointmentId,
+        ),
+      ),
+      settings: settings,
+    );
+  }
+
+  static Route<dynamic> _buildMedicalAccessAuditHistoryRoute(
+    RouteSettings settings,
+  ) {
+    return fadeRoute(
+      const RouteGuard(
+        access: AppRouteAccess.patientOnly,
+        child: MedicalAccessAuditHistoryPage(),
       ),
       settings: settings,
     );

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/router/app_routes.dart';
+import '../../../../app/router/route_args.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../../core/ui/info_widgets.dart';
+import '../../../appointment_reports/domain/appointment_report.dart';
+import '../../../appointment_reports/presentation/providers/appointment_reports_providers.dart';
 import '../../../professional_schedule/domain/professional_schedule.dart';
 import '../../../professional_schedule/domain/slot_generation.dart';
 import '../../../professional_schedule/presentation/providers/professional_schedule_providers.dart';
@@ -171,6 +175,10 @@ class AppointmentDetailPage extends ConsumerWidget {
               );
             }
 
+            final reportAsync = ref.watch(
+              appointmentReportByAppointmentIdProvider(appointment.id),
+            );
+
             final canCancel = AppointmentUiHelpers.canPatientCancel(appointment);
             final canReschedule =
                 AppointmentUiHelpers.canPatientReschedule(appointment);
@@ -274,6 +282,41 @@ class AppointmentDetailPage extends ConsumerWidget {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 14),
+                reportAsync.when(
+                  loading: () => const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text('Chargement du bilan médical...'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  error: (error, _) => Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _PatientReportInfoMessage(
+                        icon: Icons.error_outline,
+                        title: 'Bilan indisponible',
+                        message: 'Impossible de charger le bilan : $error',
+                      ),
+                    ),
+                  ),
+                  data: (report) => _PatientAppointmentReportSection(
+                    appointment: appointment,
+                    report: report,
+                  ),
                 ),
                 if (canReschedule) ...[
                   const SizedBox(height: 18),
@@ -424,6 +467,254 @@ class _ActionAvailabilityCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PatientAppointmentReportSection extends StatelessWidget {
+  const _PatientAppointmentReportSection({
+    required this.appointment,
+    required this.report,
+  });
+
+  final Appointment appointment;
+  final AppointmentReport? report;
+
+  String _linkedMedicalRecordId(String appointmentId) {
+    return 'report_${appointmentId.trim()}';
+  }
+
+  void _openLinkedMedicalRecord(BuildContext context, Appointment appointment) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.medicalRecordDetail,
+      arguments: MedicalRecordDetailArgs(
+        recordId: _linkedMedicalRecordId(appointment.id),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (appointment.status == AppointmentStatus.pending) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: _PatientReportInfoMessage(
+            icon: Icons.hourglass_bottom_outlined,
+            title: 'Bilan non disponible',
+            message:
+                'Le bilan sera disponible après confirmation et saisie par le professionnel.',
+          ),
+        ),
+      );
+    }
+
+    if (appointment.status == AppointmentStatus.declinedByProfessional ||
+        appointment.status == AppointmentStatus.cancelledByPatient) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: _PatientReportInfoMessage(
+            icon: Icons.event_busy_outlined,
+            title: 'Bilan indisponible',
+            message:
+                'Aucun bilan n’est disponible pour une demande refusée ou un rendez-vous annulé.',
+          ),
+        ),
+      );
+    }
+
+    final currentReport = report;
+
+    if (currentReport == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: _PatientReportInfoMessage(
+            icon: Icons.note_alt_outlined,
+            title: 'Bilan non encore disponible',
+            message:
+                'Le professionnel n’a pas encore renseigné le bilan de ce rendez-vous.',
+          ),
+        ),
+      );
+    }
+
+    final sections = <_PatientReportSectionData>[
+      if (currentReport.hasSummary)
+        _PatientReportSectionData(
+          title: 'Résumé',
+          value: currentReport.summary,
+          icon: Icons.summarize_outlined,
+        ),
+      if (currentReport.hasClinicalNotes)
+        _PatientReportSectionData(
+          title: 'Notes cliniques',
+          value: currentReport.clinicalNotes,
+          icon: Icons.notes_outlined,
+        ),
+      if (currentReport.hasDiagnosis)
+        _PatientReportSectionData(
+          title: 'Diagnostic',
+          value: currentReport.diagnosis,
+          icon: Icons.medical_information_outlined,
+        ),
+      if (currentReport.hasTreatmentPlan)
+        _PatientReportSectionData(
+          title: 'Conduite à tenir',
+          value: currentReport.treatmentPlan,
+          icon: Icons.assignment_turned_in_outlined,
+        ),
+      if (currentReport.hasPrescriptions)
+        _PatientReportSectionData(
+          title: 'Prescription',
+          value: currentReport.prescriptions,
+          icon: Icons.receipt_long_outlined,
+        ),
+      if (currentReport.hasRequestedExams)
+        _PatientReportSectionData(
+          title: 'Examens demandés',
+          value: currentReport.requestedExams,
+          icon: Icons.science_outlined,
+        ),
+      if (currentReport.hasFollowUpInstructions)
+        _PatientReportSectionData(
+          title: 'Consignes de suivi',
+          value: currentReport.followUpInstructions,
+          icon: Icons.follow_the_signs_outlined,
+        ),
+    ];
+
+    return InfoSectionCard(
+      title: 'Bilan du rendez-vous',
+      icon: Icons.description_outlined,
+      children: [
+        InfoLine(
+          label: 'Professionnel',
+          value: currentReport.professionalName,
+        ),
+        InfoLine(
+          label: 'Mis à jour',
+          value: AppDateFormatters.formatDateTimeLabel(currentReport.updatedAt),
+        ),
+        InfoLine(
+          label: 'Motif initial',
+          value: currentReport.appointmentReason,
+        ),
+        const SizedBox(height: 8),
+        if (sections.isEmpty)
+          const Text(
+            'Le bilan existe, mais aucun contenu détaillé n’a encore été renseigné.',
+          )
+        else
+          ...sections.map(
+            (section) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _PatientReportTextBlock(section: section),
+            ),
+          ),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _openLinkedMedicalRecord(context, appointment),
+            icon: const Icon(Icons.folder_open_outlined),
+            label: const Text('Voir dans mes documents médicaux'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PatientReportInfoMessage extends StatelessWidget {
+  const _PatientReportInfoMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: cs.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PatientReportSectionData {
+  const _PatientReportSectionData({
+    required this.title,
+    required this.value,
+    required this.icon,
+  });
+
+  final String title;
+  final String value;
+  final IconData icon;
+}
+
+class _PatientReportTextBlock extends StatelessWidget {
+  const _PatientReportTextBlock({
+    required this.section,
+  });
+
+  final _PatientReportSectionData section;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(section.icon, size: 18, color: cs.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                section.title,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                section.value,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

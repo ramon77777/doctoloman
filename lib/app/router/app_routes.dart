@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../features/appointments/presentation/pages/appointments_page.dart';
 import '../../features/home/presentation/pages/home_entry_page.dart';
+import '../../features/medical_access/presentation/pages/patient_medical_access_page.dart';
+import '../../features/medical_access/presentation/pages/professional_authorized_patients_page.dart';
 import '../../features/medical_records/presentation/pages/medical_record_create_page.dart';
 import '../../features/medical_records/presentation/pages/medical_records_page.dart';
 import '../../features/pharmacies/presentation/pages/pharmacies_on_duty_page.dart';
@@ -35,10 +37,19 @@ class AppRoutes {
   static const medicalRecordCreate = '/medical-records/create';
   static const medicalRecordEdit = '/medical-records/edit';
 
+  static const patientMedicalAccess = '/medical-access';
+  static const String medicalAccessAuditHistory = '/medical-access-audit-history';
+  static const professionalAuthorizedPatients =
+      '/professional/authorized-patients';
+  static const professionalPatientMedicalRecords =
+      '/professional/patient-medical-records';
+
   static const professionalHome = '/professional';
   static const professionalAppointments = '/professional/appointments';
   static const professionalAppointmentDetail =
       '/professional/appointments/detail';
+  static const professionalAppointmentReport =
+      '/professional/appointments/report';
   static const professionalProfile = '/professional/profile';
   static const professionalSchedule = '/professional/schedule';
   static const professionalProfileEdit = '/professional/profile/edit';
@@ -46,7 +57,6 @@ class AppRoutes {
   static Map<String, WidgetBuilder> staticRoutes() {
     return {
       home: (_) => const HomeEntryPage(),
-
       pharmacies: (_) => const RouteGuard(
             access: AppRouteAccess.public,
             child: PharmaciesPage(),
@@ -55,7 +65,6 @@ class AppRoutes {
             access: AppRouteAccess.public,
             child: PharmaciesPage(initialOnDutyOnly: true),
           ),
-
       appointments: (_) => const RouteGuard(
             access: AppRouteAccess.patientOnly,
             child: AppointmentsPage(),
@@ -68,7 +77,6 @@ class AppRoutes {
             access: AppRouteAccess.patientOnly,
             child: ProfileEditPage(),
           ),
-
       medicalRecords: (_) => const RouteGuard(
             access: AppRouteAccess.patientOnly,
             child: MedicalRecordsPage(),
@@ -77,7 +85,10 @@ class AppRoutes {
             access: AppRouteAccess.patientOnly,
             child: MedicalRecordCreatePage(),
           ),
-
+      patientMedicalAccess: (_) => const RouteGuard(
+            access: AppRouteAccess.patientOnly,
+            child: PatientMedicalAccessPage(),
+          ),
       professionalHome: (_) => const RouteGuard(
             access: AppRouteAccess.professionalOnly,
             child: ProfessionalHomePage(),
@@ -85,6 +96,10 @@ class AppRoutes {
       professionalAppointments: (_) => const RouteGuard(
             access: AppRouteAccess.professionalOnly,
             child: ProfessionalAppointmentsPage(),
+          ),
+      professionalAuthorizedPatients: (_) => const RouteGuard(
+            access: AppRouteAccess.professionalOnly,
+            child: ProfessionalAuthorizedPatientsPage(),
           ),
       professionalProfile: (_) => const RouteGuard(
             access: AppRouteAccess.professionalOnly,
