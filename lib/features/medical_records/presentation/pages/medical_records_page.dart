@@ -77,7 +77,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
         title: const Text('Mes documents médicaux'),
         actions: [
           IconButton(
-            tooltip: 'Gérer les autorisations',
+            tooltip: 'Gérer mes autorisations',
             onPressed: () => _openAccessManagement(context),
             icon: const Icon(Icons.admin_panel_settings_outlined),
           ),
@@ -121,13 +121,17 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                 children: [
                   const _InfoBanner(
                     text:
-                        'Dans cette version, les documents médicaux mock sont stockés localement sur l’appareil. Les bilans de rendez-vous apparaissent ici lorsqu’ils sont rattachés au dossier médical du patient.',
+                        'Dans cette version, les documents médicaux mock sont stockés localement sur l’appareil. Les comptes rendus de consultation apparaissent ici lorsqu’ils sont rattachés au dossier médical du patient.',
                   ),
                   const SizedBox(height: 14),
                   _AccessManagementCard(
                     activeAccessCount: patientAccesses.length,
-                    onManage: () => _openAccessManagement(context),
-                    onOpenHistory: () => _openAccessHistory(context),
+                    onOpen: () => _openAccessManagement(context),
+                  ),
+                  const SizedBox(height: 14),
+                  _AccessHistoryCard(
+                    activeAccessCount: patientAccesses.length,
+                    onOpen: () => _openAccessHistory(context),
                   ),
                   const SizedBox(height: 14),
                   _RecordsOverviewCard(
@@ -149,7 +153,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                             decoration: InputDecoration(
                               labelText: 'Rechercher un document',
                               hintText:
-                                  'Titre, source, résumé, bilan, professionnel...',
+                                  'Titre, source, résumé, compte rendu, professionnel...',
                               prefixIcon: const Icon(Icons.search),
                               suffixIcon: filters.query.trim().isEmpty
                                   ? null
@@ -192,8 +196,8 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                                   ),
                                   label: Text(
                                     filters.sensitiveOnly
-                                        ? 'Sensible uniquement ✓'
-                                        : 'Sensible uniquement',
+                                        ? 'Sensibles uniquement ✓'
+                                        : 'Sensibles uniquement',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -220,7 +224,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
                   const _SectionTitle(
                     title: 'Documents disponibles',
                     subtitle:
-                        'Ordonnances, analyses, imagerie, certificats et bilans de rendez-vous',
+                        'Ordonnances, analyses, imagerie, certificats et comptes rendus de consultation',
                     icon: Icons.folder_open_outlined,
                   ),
                   const SizedBox(height: 10),
@@ -280,7 +284,7 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Bilan / compte rendu';
+        return 'Compte rendu';
       case MedicalRecordCategory.other:
         return 'Autre';
     }
@@ -290,21 +294,15 @@ class _MedicalRecordsPageState extends ConsumerState<MedicalRecordsPage> {
 class _AccessManagementCard extends StatelessWidget {
   const _AccessManagementCard({
     required this.activeAccessCount,
-    required this.onManage,
-    required this.onOpenHistory,
+    required this.onOpen,
   });
 
   final int activeAccessCount;
-  final VoidCallback onManage;
-  final VoidCallback onOpenHistory;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    final description = activeAccessCount == 0
-        ? 'Aucun professionnel n’a actuellement accès à votre dossier. Vous pouvez autoriser un professionnel depuis cet écran.'
-        : '$activeAccessCount accès actif(s) à votre dossier. Vous pouvez autoriser un nouveau professionnel, révoquer un accès ou consulter l’historique.';
 
     return Card(
       child: Padding(
@@ -322,32 +320,77 @@ class _AccessManagementCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Accès à mon dossier',
+                    'Gérer mes autorisations',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    description,
+                    activeAccessCount == 0
+                        ? 'Aucun professionnel n’a actuellement accès à votre dossier médical. Vous pouvez autoriser un professionnel depuis cette page.'
+                        : '$activeAccessCount accès actif(s) actuellement. Vous pouvez autoriser un nouveau professionnel ou révoquer un accès existant.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
                   ),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: onManage,
-                        icon: const Icon(Icons.lock_open_outlined),
-                        label: const Text('Gérer les autorisations'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: onOpenHistory,
-                        icon: const Icon(Icons.manage_history_outlined),
-                        label: const Text('Voir l’historique'),
-                      ),
-                    ],
+                  OutlinedButton.icon(
+                    onPressed: onOpen,
+                    icon: const Icon(Icons.open_in_new_outlined),
+                    label: const Text('Gérer mes autorisations'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AccessHistoryCard extends StatelessWidget {
+  const _AccessHistoryCard({
+    required this.activeAccessCount,
+    required this.onOpen,
+  });
+
+  final int activeAccessCount;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.manage_history_outlined, color: colorScheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Historique des accès',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    activeAccessCount == 0
+                        ? 'Aucun accès actif détecté pour le moment. Consulte l’historique complet pour voir les autorisations accordées et révoquées.'
+                        : '$activeAccessCount accès actif(s) à votre dossier. Consultez l’historique complet pour gérer et revoir les autorisations.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: onOpen,
+                    icon: const Icon(Icons.open_in_new_outlined),
+                    label: const Text('Voir l’historique des accès'),
                   ),
                 ],
               ),
@@ -670,7 +713,7 @@ class _MedicalRecordsFiltersSheetState
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Bilan / compte rendu';
+        return 'Compte rendu';
       case MedicalRecordCategory.other:
         return 'Autre';
     }
@@ -726,7 +769,7 @@ class _RecordsOverviewCard extends StatelessWidget {
                 _MiniBadge(label: '$totalCount document(s) total'),
                 _MiniBadge(label: '$filteredCount affiché(s)'),
                 _MiniBadge(label: '$sensitiveCount sensible(s)'),
-                _MiniBadge(label: '$reportCount bilan(s)'),
+                _MiniBadge(label: '$reportCount compte(s) rendu(s)'),
                 _MiniBadge(
                   label: latestRecordDate == null
                       ? 'Dernier : —'
@@ -826,7 +869,7 @@ class _MedicalRecordCard extends StatelessWidget {
       case MedicalRecordCategory.certificate:
         return 'Certificat';
       case MedicalRecordCategory.report:
-        return 'Bilan / compte rendu';
+        return 'Compte rendu';
       case MedicalRecordCategory.other:
         return 'Document';
     }
@@ -890,9 +933,10 @@ class _MedicalRecordCard extends StatelessWidget {
                       children: [
                         _MiniBadge(label: _categoryLabel(record.category)),
                         _MiniBadge(label: _formatDate(record.recordDate)),
-                        if (isReport) const _MiniBadge(label: 'Rendez-vous'),
+                        if (isReport)
+                          const _MiniBadge(label: 'Consultation'),
                         if (record.isSensitive)
-                          const _MiniBadge(label: 'Sensible'),
+                          const _MiniBadge(label: 'Document sensible'),
                       ],
                     ),
                   ],
@@ -991,7 +1035,7 @@ class _EmptyRecordsState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Ajoute un document médical ou attends qu’un bilan de rendez-vous soit rattaché à ton dossier.',
+              'Ajoutez un document médical ou attendez qu’un compte rendu de consultation soit rattaché à votre dossier.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1030,7 +1074,7 @@ class _EmptyFilteredState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Essaie une autre recherche ou réinitialise les filtres.',
+              'Essayez une autre recherche ou réinitialisez les filtres.',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

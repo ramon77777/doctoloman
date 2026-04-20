@@ -297,7 +297,9 @@ class AppointmentDetailPage extends ConsumerWidget {
                           ),
                           SizedBox(width: 10),
                           Expanded(
-                            child: Text('Chargement du bilan médical...'),
+                            child: Text(
+                              'Chargement du compte rendu de consultation...',
+                            ),
                           ),
                         ],
                       ),
@@ -308,8 +310,9 @@ class AppointmentDetailPage extends ConsumerWidget {
                       padding: const EdgeInsets.all(16),
                       child: _PatientReportInfoMessage(
                         icon: Icons.error_outline,
-                        title: 'Bilan indisponible',
-                        message: 'Impossible de charger le bilan : $error',
+                        title: 'Compte rendu indisponible',
+                        message:
+                            'Impossible de charger le compte rendu : $error',
                       ),
                     ),
                   ),
@@ -501,9 +504,9 @@ class _PatientAppointmentReportSection extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: _PatientReportInfoMessage(
             icon: Icons.hourglass_bottom_outlined,
-            title: 'Bilan non disponible',
+            title: 'Compte rendu non disponible',
             message:
-                'Le bilan sera disponible après confirmation et saisie par le professionnel.',
+                'Le compte rendu sera disponible après confirmation et saisie par le professionnel.',
           ),
         ),
       );
@@ -516,9 +519,9 @@ class _PatientAppointmentReportSection extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: _PatientReportInfoMessage(
             icon: Icons.event_busy_outlined,
-            title: 'Bilan indisponible',
+            title: 'Compte rendu indisponible',
             message:
-                'Aucun bilan n’est disponible pour une demande refusée ou un rendez-vous annulé.',
+                'Aucun compte rendu n’est disponible pour une demande refusée ou un rendez-vous annulé.',
           ),
         ),
       );
@@ -532,9 +535,9 @@ class _PatientAppointmentReportSection extends StatelessWidget {
           padding: EdgeInsets.all(16),
           child: _PatientReportInfoMessage(
             icon: Icons.note_alt_outlined,
-            title: 'Bilan non encore disponible',
+            title: 'Compte rendu non encore disponible',
             message:
-                'Le professionnel n’a pas encore renseigné le bilan de ce rendez-vous.',
+                'Le professionnel n’a pas encore renseigné le compte rendu de cette consultation.',
           ),
         ),
       );
@@ -586,7 +589,7 @@ class _PatientAppointmentReportSection extends StatelessWidget {
     ];
 
     return InfoSectionCard(
-      title: 'Bilan du rendez-vous',
+      title: 'Compte rendu de consultation',
       icon: Icons.description_outlined,
       children: [
         InfoLine(
@@ -604,7 +607,7 @@ class _PatientAppointmentReportSection extends StatelessWidget {
         const SizedBox(height: 8),
         if (sections.isEmpty)
           const Text(
-            'Le bilan existe, mais aucun contenu détaillé n’a encore été renseigné.',
+            'Le compte rendu existe, mais aucun contenu détaillé n’a encore été renseigné.',
           )
         else
           ...sections.map(
@@ -619,7 +622,7 @@ class _PatientAppointmentReportSection extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: () => _openLinkedMedicalRecord(context, appointment),
             icon: const Icon(Icons.folder_open_outlined),
-            label: const Text('Voir dans mes documents médicaux'),
+            label: const Text('Voir dans mon dossier médical'),
           ),
         ),
       ],

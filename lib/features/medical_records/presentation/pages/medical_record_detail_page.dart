@@ -283,7 +283,7 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                     icon: Icons.lock_outline,
                     children: [
                       Text(
-                        'Ce document provient d’un bilan de rendez-vous saisi par un professionnel de santé. Il ne peut pas être modifié ou supprimé directement depuis le dossier médical du patient.',
+                        'Ce document provient d’un compte rendu de consultation saisi par un professionnel de santé. Il ne peut pas être modifié ou supprimé directement depuis le dossier médical du patient.',
                       ),
                     ],
                   ),
@@ -312,7 +312,7 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            'Ce document est issu d’un bilan de rendez-vous. Vous pouvez revenir au rendez-vous d’origine.',
+                            'Ce document est issu d’un compte rendu de consultation. Vous pouvez revenir au rendez-vous d’origine.',
                             style: textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -357,7 +357,8 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 14),
                 _InfoSectionCard(
-                  title: isAppointmentReport ? 'Résumé du bilan' : 'Résumé',
+                  title:
+                      isAppointmentReport ? 'Résumé de consultation' : 'Résumé',
                   icon: isAppointmentReport
                       ? Icons.summarize_outlined
                       : Icons.notes_outlined,
@@ -479,7 +480,7 @@ class _AppointmentReportDetailsCard extends StatelessWidget {
     final sections = _parseReportSections(description);
 
     return _InfoSectionCard(
-      title: 'Détails du bilan',
+      title: 'Détails du compte rendu',
       icon: Icons.medical_information_outlined,
       children: [
         if (sections.isEmpty)

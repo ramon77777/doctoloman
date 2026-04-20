@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/router/app_routes.dart';
 import '../../../../core/models/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../professional_profile/domain/professional_profile.dart';
@@ -52,8 +53,7 @@ class PatientMedicalAccessPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
@@ -97,8 +97,7 @@ class PatientMedicalAccessPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
@@ -109,15 +108,21 @@ class PatientMedicalAccessPage extends ConsumerWidget {
       );
   }
 
+  void _openAuditHistory(BuildContext context) {
+    Navigator.of(context).pushNamed(AppRoutes.medicalAccessAuditHistory);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
 
-    if (!authState.isAuthenticated || user == null || user.role != AppUserRole.patient) {
+    if (!authState.isAuthenticated ||
+        user == null ||
+        user.role != AppUserRole.patient) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Accès au dossier'),
+          title: const Text('Autorisations dossier médical'),
         ),
         body: const SafeArea(
           child: Center(
@@ -154,6 +159,13 @@ class PatientMedicalAccessPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Autorisations dossier médical'),
+        actions: [
+          IconButton(
+            tooltip: 'Historique des accès',
+            onPressed: () => _openAuditHistory(context),
+            icon: const Icon(Icons.manage_history_outlined),
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -165,68 +177,77 @@ class PatientMedicalAccessPage extends ConsumerWidget {
                   'Vous restez maître de votre dossier. Vous pouvez autoriser ou révoquer l’accès d’un professionnel à tout moment.',
             ),
             const SizedBox(height: 14),
-            _SectionHeader(
+            _OverviewCard(
+              activeCount: activeAccesses.length,
+              availableCount: availableProfessionals.length,
+              onOpenHistory: () => _openAuditHistory(context),
+            ),
+            const SizedBox(height: 18),
+            const _SectionHeader(
               title: 'Accès actifs',
               subtitle: 'Professionnels actuellement autorisés',
             ),
             const SizedBox(height: 10),
             if (activeAccesses.isEmpty)
               const _EmptyStateCard(
-                message: 'Aucun professionnel n’a actuellement accès à votre dossier.',
+                icon: Icons.lock_outline,
+                title: 'Aucun accès actif',
+                message:
+                    'Aucun professionnel n’a actuellement accès à votre dossier.',
               )
             else
               ...activeAccesses.map(
                 (access) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            access.professionalName,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Autorisé le ${_formatDateTime(access.grantedAt)}',
-                            style:
-                                Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: () => _revokeAccess(
-                                context,
-                                ref,
-                                accessId: access.id,
-                                professionalName: access.professionalName,
-                              ),
-                              icon: const Icon(Icons.block_outlined),
-                              label: const Text('Révoquer'),
-                            ),
-                          ),
-                        ],
-                      ),
+                  child: _ActiveAccessCard(
+                    professionalName: access.professionalName,
+                    grantedAt: access.grantedAt,
+                    onRevoke: () => _revokeAccess(
+                      context,
+                      ref,
+                      accessId: access.id,
+                      professionalName: access.professionalName,
                     ),
                   ),
                 ),
               ),
             const SizedBox(height: 18),
-            _SectionHeader(
+            const _SectionHeader(
               title: 'Autoriser un professionnel',
               subtitle: 'Professionnels disponibles dans la plateforme',
             ),
             const SizedBox(height: 10),
-            if (availableProfessionals.isEmpty)
+            if (professionalsAsync.isLoading)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('Chargement des professionnels...'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (professionalsAsync.hasError)
               const _EmptyStateCard(
-                message: 'Aucun autre professionnel disponible pour le moment.',
+                icon: Icons.error_outline,
+                title: 'Chargement impossible',
+                message: 'Impossible de charger la liste des professionnels.',
+              )
+            else if (availableProfessionals.isEmpty)
+              const _EmptyStateCard(
+                icon: Icons.verified_user_outlined,
+                title: 'Aucun autre professionnel disponible',
+                message:
+                    'Tous les professionnels disponibles sont déjà autorisés ou aucun profil n’est encore disponible.',
               )
             else
               ...availableProfessionals.map(
@@ -242,6 +263,122 @@ class PatientMedicalAccessPage extends ConsumerWidget {
                   ),
                 ),
               ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({
+    required this.activeCount,
+    required this.availableCount,
+    required this.onOpenHistory,
+  });
+
+  final int activeCount;
+  final int availableCount;
+  final VoidCallback onOpenHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Résumé des autorisations',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _MiniBadge(label: '$activeCount accès actif(s)'),
+                _MiniBadge(
+                  label: '$availableCount professionnel(s) disponible(s)',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              activeCount == 0
+                  ? 'Aucun accès n’est actif pour le moment.'
+                  : 'Vous pouvez consulter l’historique complet des consultations et autorisations.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onOpenHistory,
+              icon: const Icon(Icons.open_in_new_outlined),
+              label: const Text('Voir l’historique des accès'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveAccessCard extends StatelessWidget {
+  const _ActiveAccessCard({
+    required this.professionalName,
+    required this.grantedAt,
+    required this.onRevoke,
+  });
+
+  final String professionalName;
+  final DateTime grantedAt;
+  final VoidCallback onRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              professionalName,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Autorisé le ${_formatDateTime(grantedAt)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: const [
+                _MiniBadge(label: 'Accès actif'),
+                _MiniBadge(label: 'Lecture autorisée'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onRevoke,
+                icon: const Icon(Icons.block_outlined),
+                label: const Text('Révoquer'),
+              ),
+            ),
           ],
         ),
       ),
@@ -264,7 +401,8 @@ class _ProfessionalGrantCard extends StatelessWidget {
 
     final subtitleParts = <String>[
       if (professional.specialty.trim().isNotEmpty) professional.specialty,
-      if (professional.shortLocation.trim().isNotEmpty) professional.shortLocation,
+      if (professional.shortLocation.trim().isNotEmpty)
+        professional.shortLocation,
     ];
 
     return Card(
@@ -286,6 +424,14 @@ class _ProfessionalGrantCard extends StatelessWidget {
                     ),
               ),
             ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: const [
+                _MiniBadge(label: 'Nouveau professionnel'),
+              ],
+            ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -382,9 +528,13 @@ class _SectionHeader extends StatelessWidget {
 
 class _EmptyStateCard extends StatelessWidget {
   const _EmptyStateCard({
+    required this.icon,
+    required this.title,
     required this.message,
   });
 
+  final IconData icon;
+  final String title;
   final String message;
 
   @override
@@ -393,12 +543,53 @@ class _EmptyStateCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          message,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            Icon(icon, size: 34, color: cs.onSurfaceVariant),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniBadge extends StatelessWidget {
+  const _MiniBadge({
+    required this.label,
+  });
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: cs.onSurface,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -409,5 +600,7 @@ String _formatDateTime(DateTime value) {
   final d = value;
   final hh = d.hour.toString().padLeft(2, '0');
   final mm = d.minute.toString().padLeft(2, '0');
-  return '${d.day}/${d.month}/${d.year} à $hh:$mm';
+  final dd = d.day.toString().padLeft(2, '0');
+  final mon = d.month.toString().padLeft(2, '0');
+  return '$dd/$mon/${d.year} à $hh:$mm';
 }

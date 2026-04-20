@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../professional_profile/domain/professional_profile.dart';
+import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../data/in_memory_medical_access_repository.dart';
 import '../../data/medical_access_local_storage.dart';
 import '../../domain/medical_access.dart';
@@ -49,7 +51,7 @@ final patientMedicalAccessProvider = Provider<List<MedicalAccess>>(
           return const <MedicalAccess>[];
         }
 
-        final patientId = _normalizePatientId(user.phone);
+        final patientId = _normalizePatientKey(user.phone);
         if (patientId.isEmpty) {
           return const <MedicalAccess>[];
         }
@@ -71,6 +73,7 @@ final professionalMedicalAccessProvider = Provider<List<MedicalAccess>>(
   (ref) {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
+    final profile = ref.watch(professionalProfileProvider);
     final itemsAsync = ref.watch(medicalAccessListProvider);
 
     return itemsAsync.maybeWhen(
@@ -81,13 +84,18 @@ final professionalMedicalAccessProvider = Provider<List<MedicalAccess>>(
           return const <MedicalAccess>[];
         }
 
-        final professionalId = _normalizeId(user.id);
-        if (professionalId.isEmpty) {
+        final professionalKeys = _buildProfessionalKeys(
+          authUser: user,
+          profile: profile,
+        );
+
+        if (professionalKeys.isEmpty) {
           return const <MedicalAccess>[];
         }
 
         final filtered = items.where((item) {
-          return item.professionalId == professionalId && item.isActive;
+          return item.isActive &&
+              professionalKeys.contains(_normalizeTextKey(item.professionalId));
         }).toList()
           ..sort((a, b) => b.grantedAt.compareTo(a.grantedAt));
 
@@ -114,34 +122,58 @@ class MedicalAccessQuery {
     if (identical(this, other)) return true;
 
     return other is MedicalAccessQuery &&
-        _normalizePatientId(other.patientId) == _normalizePatientId(patientId) &&
-        _normalizeId(other.professionalId) == _normalizeId(professionalId);
+        _normalizePatientCandidate(other.patientId) ==
+            _normalizePatientCandidate(patientId) &&
+        _normalizeTextKey(other.professionalId) ==
+            _normalizeTextKey(professionalId);
   }
 
   @override
   int get hashCode => Object.hash(
-        _normalizePatientId(patientId),
-        _normalizeId(professionalId),
+        _normalizePatientCandidate(patientId),
+        _normalizeTextKey(professionalId),
       );
 }
 
 final hasMedicalAccessProvider =
     Provider.family<bool, MedicalAccessQuery>((ref, query) {
   final itemsAsync = ref.watch(medicalAccessListProvider);
+  final authState = ref.watch(authControllerProvider);
+  final authUser = authState.user;
+  final profile = ref.watch(professionalProfileProvider);
 
   return itemsAsync.maybeWhen(
     data: (items) {
-      final patientId = _normalizePatientId(query.patientId);
-      final professionalId = _normalizeId(query.professionalId);
+      final patientCandidates = _buildPatientCandidates(query.patientId);
+      if (patientCandidates.isEmpty) {
+        return false;
+      }
 
-      if (patientId.isEmpty || professionalId.isEmpty) {
+      final requestedProfessionalKey = _normalizeTextKey(query.professionalId);
+
+      final professionalKeys = <String>{
+        if (requestedProfessionalKey.isNotEmpty) requestedProfessionalKey,
+      };
+
+      if (authState.isAuthenticated &&
+          authUser != null &&
+          authUser.role == AppUserRole.professional) {
+        professionalKeys.addAll(
+          _buildProfessionalKeys(
+            authUser: authUser,
+            profile: profile,
+          ),
+        );
+      }
+
+      if (professionalKeys.isEmpty) {
         return false;
       }
 
       return items.any((item) {
         return item.isActive &&
-            item.patientId == patientId &&
-            item.professionalId == professionalId;
+            patientCandidates.contains(_normalizePatientCandidate(item.patientId)) &&
+            professionalKeys.contains(_normalizeTextKey(item.professionalId));
       });
     },
     orElse: () => false,
@@ -152,6 +184,7 @@ final activeMedicalAccessForCurrentProfessionalByPatientIdProvider =
     Provider.family<MedicalAccess?, String>((ref, patientId) {
   final authState = ref.watch(authControllerProvider);
   final user = authState.user;
+  final profile = ref.watch(professionalProfileProvider);
 
   if (!authState.isAuthenticated ||
       user == null ||
@@ -159,19 +192,29 @@ final activeMedicalAccessForCurrentProfessionalByPatientIdProvider =
     return null;
   }
 
-  final normalizedPatientId = _normalizePatientId(patientId);
-  final normalizedProfessionalId = _normalizeId(user.id);
+  final patientCandidates = _buildPatientCandidates(patientId);
+  final professionalKeys = _buildProfessionalKeys(
+    authUser: user,
+    profile: profile,
+  );
 
-  if (normalizedPatientId.isEmpty || normalizedProfessionalId.isEmpty) {
+  if (patientCandidates.isEmpty || professionalKeys.isEmpty) {
     return null;
   }
 
-  final accesses = ref.watch(professionalMedicalAccessProvider);
+  final accesses = ref.watch(medicalAccessListProvider).maybeWhen(
+        data: (items) => items,
+        orElse: () => const <MedicalAccess>[],
+      );
 
   for (final access in accesses) {
-    if (access.isActive &&
-        access.patientId == normalizedPatientId &&
-        access.professionalId == normalizedProfessionalId) {
+    if (!access.isActive) continue;
+
+    final accessPatientKey = _normalizePatientCandidate(access.patientId);
+    final accessProfessionalKey = _normalizeTextKey(access.professionalId);
+
+    if (patientCandidates.contains(accessPatientKey) &&
+        professionalKeys.contains(accessProfessionalKey)) {
       return access;
     }
   }
@@ -215,9 +258,9 @@ class MedicalAccessController {
       return;
     }
 
-    final normalizedCurrentPatientId = _normalizePatientId(currentUser.phone);
-    final normalizedPatientId = _normalizePatientId(patientUser.phone);
-    final normalizedProfessionalId = _normalizeId(professionalId);
+    final normalizedCurrentPatientId = _normalizePatientKey(currentUser.phone);
+    final normalizedPatientId = _normalizePatientKey(patientUser.phone);
+    final normalizedProfessionalId = _normalizeTextKey(professionalId);
 
     if (normalizedCurrentPatientId.isEmpty ||
         normalizedPatientId.isEmpty ||
@@ -233,8 +276,8 @@ class MedicalAccessController {
     final match = existing.cast<MedicalAccess?>().firstWhere(
           (item) =>
               item != null &&
-              item.patientId == normalizedPatientId &&
-              item.professionalId == normalizedProfessionalId,
+              _normalizePatientCandidate(item.patientId) == normalizedPatientId &&
+              _normalizeTextKey(item.professionalId) == normalizedProfessionalId,
           orElse: () => null,
         );
 
@@ -251,7 +294,9 @@ class MedicalAccessController {
             grantedAt: now,
           )
         : match.copyWith(
+            patientId: normalizedPatientId,
             patientName: _fallbackName(patientName, match.patientName),
+            professionalId: normalizedProfessionalId,
             professionalName:
                 _fallbackName(professionalName, match.professionalName),
             grantedAt: now,
@@ -272,14 +317,15 @@ class MedicalAccessController {
       return;
     }
 
-    final normalizedId = _normalizeId(accessId);
+    final normalizedId = _normalizeTextKey(accessId);
     if (normalizedId.isEmpty) return;
 
     final existing = await _repo.getById(normalizedId);
     if (existing == null) return;
 
-    final normalizedCurrentPatientId = _normalizePatientId(currentUser.phone);
-    if (existing.patientId != normalizedCurrentPatientId) {
+    final normalizedCurrentPatientId = _normalizePatientKey(currentUser.phone);
+    if (_normalizePatientCandidate(existing.patientId) !=
+        normalizedCurrentPatientId) {
       return;
     }
 
@@ -297,11 +343,13 @@ class MedicalAccessController {
       return;
     }
 
-    final currentPatientId = _normalizePatientId(currentUser.phone);
+    final currentPatientId = _normalizePatientKey(currentUser.phone);
     if (currentPatientId.isEmpty) return;
 
     final items = await _repo.listAll();
-    final mine = items.where((item) => item.patientId == currentPatientId);
+    final mine = items.where(
+      (item) => _normalizePatientCandidate(item.patientId) == currentPatientId,
+    );
 
     for (final item in mine) {
       if (item.isActive) {
@@ -319,12 +367,43 @@ class MedicalAccessController {
   }
 }
 
-String _normalizeId(String value) {
-  return value.trim();
+Set<String> _buildProfessionalKeys({
+  required AppUser authUser,
+  required ProfessionalProfile profile,
+}) {
+  final keys = <String>{
+    _normalizeTextKey(authUser.id),
+    _normalizeTextKey(profile.id),
+  };
+
+  keys.removeWhere((value) => value.isEmpty);
+  return keys;
 }
 
-String _normalizePatientId(String value) {
+Set<String> _buildPatientCandidates(String rawPatientId) {
+  final candidates = <String>{
+    _normalizePatientCandidate(rawPatientId),
+    _normalizePatientKey(rawPatientId),
+  };
+
+  candidates.removeWhere((value) => value.isEmpty);
+  return candidates;
+}
+
+String _normalizePatientKey(String value) {
   return value.replaceAll(RegExp(r'\D'), '');
+}
+
+String _normalizePatientCandidate(String value) {
+  final digits = _normalizePatientKey(value);
+  if (digits.isNotEmpty) {
+    return digits;
+  }
+  return _normalizeTextKey(value);
+}
+
+String _normalizeTextKey(String value) {
+  return value.trim();
 }
 
 String _fallbackName(String value, String fallback) {
