@@ -87,15 +87,30 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
     );
   }
 
-  void _openReport(BuildContext context, Appointment appointment) {
+  bool _canWriteReport(Appointment appointment) {
+    return appointment.status == AppointmentStatus.confirmed &&
+        !appointment.isUpcoming;
+  }
+
+  String _reportLockedMessage(Appointment appointment) {
     if (appointment.status != AppointmentStatus.confirmed) {
+      return 'Le bilan n’est accessible qu’après confirmation du rendez-vous.';
+    }
+
+    if (appointment.isUpcoming) {
+      return 'Le bilan ne peut être rédigé qu’après la tenue effective du rendez-vous.';
+    }
+
+    return 'Le bilan n’est pas accessible pour ce rendez-vous.';
+  }
+
+  void _openReport(BuildContext context, Appointment appointment) {
+    if (!_canWriteReport(appointment)) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Le bilan n’est accessible qu’après confirmation du rendez-vous.',
-            ),
+          SnackBar(
+            content: Text(_reportLockedMessage(appointment)),
           ),
         );
       return;
@@ -184,8 +199,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
             final canCancelConfirmed =
                 AppointmentUiHelpers.canProfessionalCancelConfirmed(appointment);
 
-            final canWriteReport =
-                appointment.status == AppointmentStatus.confirmed;
+            final canWriteReport = _canWriteReport(appointment);
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -207,6 +221,9 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                     onOpen: canWriteReport
                         ? () => _openReport(context, appointment)
                         : null,
+                    lockedMessage: canWriteReport
+                        ? null
+                        : _reportLockedMessage(appointment),
                   ),
                   loading: () => const Card(
                     child: Padding(
@@ -232,6 +249,9 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                     onOpen: canWriteReport
                         ? () => _openReport(context, appointment)
                         : null,
+                    lockedMessage: canWriteReport
+                        ? null
+                        : _reportLockedMessage(appointment),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -340,9 +360,9 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                             color: Theme.of(context).colorScheme.primary,
                           ),
                           const SizedBox(width: 10),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Le bilan ne peut être saisi que lorsque le rendez-vous est confirmé.',
+                              _reportLockedMessage(appointment),
                             ),
                           ),
                         ],
@@ -413,11 +433,13 @@ class _ReportStatusCard extends StatelessWidget {
     required this.hasReport,
     required this.updatedAt,
     required this.onOpen,
+    required this.lockedMessage,
   });
 
   final bool hasReport;
   final DateTime? updatedAt;
   final VoidCallback? onOpen;
+  final String? lockedMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -461,6 +483,15 @@ class _ReportStatusCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       updatedLabel,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                  if (lockedMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      lockedMessage!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),

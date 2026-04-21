@@ -21,6 +21,24 @@ class PatientMedicalAccessPage extends ConsumerWidget {
       return;
     }
 
+    final normalizedPatientId =
+        authUser.phone.replaceAll(RegExp(r'\D'), '');
+
+    if (normalizedPatientId.isEmpty) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Impossible d’autoriser l’accès : identifiant patient invalide.',
+            ),
+          ),
+        );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -44,8 +62,15 @@ class PatientMedicalAccessPage extends ConsumerWidget {
 
     if (!confirmed) return;
 
+    final normalizedPatientUser = AppUser(
+      id: normalizedPatientId,
+      role: authUser.role,
+      name: authUser.name,
+      phone: authUser.phone,
+    );
+
     await ref.read(medicalAccessControllerProvider).grantAccess(
-          patientUser: authUser,
+          patientUser: normalizedPatientUser,
           patientName: authUser.name,
           professionalId: professional.id,
           professionalName: professional.displayName,

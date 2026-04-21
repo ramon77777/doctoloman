@@ -87,8 +87,26 @@ class _ProfessionalAppointmentReportPageState
     return value.replaceAll(RegExp(r'\D'), '');
   }
 
+  bool _canWriteReport(Appointment appointment) {
+    return appointment.status == AppointmentStatus.confirmed &&
+        !appointment.isUpcoming;
+  }
+
+  String _lockedReportMessage(Appointment appointment) {
+    if (appointment.status != AppointmentStatus.confirmed) {
+      return 'Le bilan n’est accessible qu’après confirmation du rendez-vous.';
+    }
+
+    if (appointment.isUpcoming) {
+      return 'Le bilan ne peut être renseigné qu’après la tenue effective du rendez-vous.';
+    }
+
+    return 'Le bilan n’est pas accessible pour ce rendez-vous.';
+  }
+
   void _openPatientMedicalRecord(Appointment appointment) {
     final patientId = _normalizePatientId(appointment.patientPhoneE164);
+
     if (patientId.isEmpty) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -118,14 +136,12 @@ class _ProfessionalAppointmentReportPageState
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid || _isSaving) return;
 
-    if (appointment.status != AppointmentStatus.confirmed) {
+    if (!_canWriteReport(appointment)) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Le bilan ne peut être enregistré que pour un rendez-vous confirmé.',
-            ),
+          SnackBar(
+            content: Text(_lockedReportMessage(appointment)),
           ),
         );
       return;
@@ -279,43 +295,66 @@ class _ProfessionalAppointmentReportPageState
               );
             }
 
-            if (appointment.status != AppointmentStatus.confirmed) {
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _ContextCard(
-                    appointment: appointment,
-                    hasExistingReport: false,
-                  ),
-                  const SizedBox(height: 14),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.lock_clock_outlined,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              'Le bilan n’est accessible qu’après confirmation du rendez-vous.',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
-
             return reportAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => Center(child: Text('Erreur : $error')),
               data: (existingReport) {
+                if (!_canWriteReport(appointment)) {
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      _ContextCard(
+                        appointment: appointment,
+                        hasExistingReport: existingReport != null,
+                      ),
+                      const SizedBox(height: 14),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.lock_clock_outlined,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _lockedReportMessage(appointment),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (existingReport != null) ...[
+                        const SizedBox(height: 12),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Un bilan existe déjà pour ce rendez-vous, mais il n’est pas modifiable tant que les conditions d’accès ne sont pas réunies.',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                }
+
                 _hydrate(existingReport);
 
                 return Form(
