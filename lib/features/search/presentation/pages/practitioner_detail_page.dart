@@ -28,6 +28,8 @@ class PractitionerDetailPage extends ConsumerStatefulWidget {
 
 class _PractitionerDetailPageState
     extends ConsumerState<PractitionerDetailPage> {
+  static const int _minimumLeadTimeMinutes = 60;
+
   late DateTime _selectedDay;
 
   /// Slot sélectionné pour l'affichage utilisateur.
@@ -78,7 +80,11 @@ class _PractitionerDetailPageState
   bool _isSlotStillBookable(DateTime day, String displaySlot) {
     final slotDateTime = _slotToDateTime(day, displaySlot);
     if (slotDateTime == null) return false;
-    return slotDateTime.isAfter(DateTime.now());
+    return slotDateTime.isAfter(
+      DateTime.now().add(
+        const Duration(minutes: _minimumLeadTimeMinutes),
+      ),
+    );
   }
 
   DaySchedule? _scheduleForSelectedDay(List<DaySchedule> schedules) {
@@ -203,7 +209,9 @@ class _PractitionerDetailPageState
     final day = _normalizeDay(_selectedDay);
 
     if (!_isSlotStillBookable(day, selectedDisplaySlot)) {
-      _showMessage('Ce créneau n’est plus réservable. Choisis-en un autre.');
+      _showMessage(
+        'Ce créneau n’est plus réservable (minimum 1h à l’avance). Choisis-en un autre.',
+      );
       _clearSelectedSlot();
       return;
     }
@@ -258,6 +266,7 @@ class _PractitionerDetailPageState
         : buildSlotsForDay(
             schedule: schedule,
             selectedDay: selectedDay,
+            minimumLeadTimeMinutes: _minimumLeadTimeMinutes,
           );
 
     final takenSlotsAsync = ref.watch(
@@ -339,6 +348,10 @@ class _PractitionerDetailPageState
                   const SizedBox(height: 18),
                   const _SectionTitle(title: 'Choisir un créneau'),
                   const SizedBox(height: 10),
+                  const _LeadTimeInfoCard(
+                    minimumLeadTimeMinutes: _minimumLeadTimeMinutes,
+                  ),
+                  const SizedBox(height: 12),
                   _DayPicker(
                     selected: selectedDay,
                     onSelect: _pickDay,
@@ -389,7 +402,7 @@ class _PractitionerDetailPageState
                           icon: Icons.schedule_outlined,
                           title: 'Aucun créneau disponible',
                           message: isToday
-                              ? 'Il ne reste plus de créneau réservable aujourd’hui. Choisis une autre date.'
+                              ? 'Les créneaux restants aujourd’hui sont trop proches pour être réservés (minimum 1h à l’avance). Merci de choisir une autre date.'
                               : 'Tous les créneaux de cette date sont déjà pris ou indisponibles.',
                         );
                       }
@@ -799,6 +812,60 @@ class _ScheduleSummaryCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     summary,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeadTimeInfoCard extends StatelessWidget {
+  const _LeadTimeInfoCard({
+    required this.minimumLeadTimeMinutes,
+  });
+
+  final int minimumLeadTimeMinutes;
+
+  String get _leadTimeLabel {
+    if (minimumLeadTimeMinutes == 60) {
+      return '1h';
+    }
+    return '$minimumLeadTimeMinutes min';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Réservation à l’avance',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Les créneaux ne sont réservables qu’au moins $_leadTimeLabel à l’avance. Les créneaux trop proches ne s’affichent pas côté patient.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

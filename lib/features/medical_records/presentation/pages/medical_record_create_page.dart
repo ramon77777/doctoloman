@@ -20,6 +20,7 @@ class _MedicalRecordCreatePageState
   final _titleCtrl = TextEditingController();
   final _sourceCtrl = TextEditingController();
   final _summaryCtrl = TextEditingController();
+  final _descriptionCtrl = TextEditingController();
 
   MedicalRecordCategory _category = MedicalRecordCategory.prescription;
   DateTime _recordDate = DateTime.now();
@@ -31,6 +32,7 @@ class _MedicalRecordCreatePageState
     _titleCtrl.dispose();
     _sourceCtrl.dispose();
     _summaryCtrl.dispose();
+    _descriptionCtrl.dispose();
     super.dispose();
   }
 
@@ -46,14 +48,14 @@ class _MedicalRecordCreatePageState
     required String rawId,
     required String rawPhone,
   }) {
-    final cleanedId = rawId.trim();
-    if (cleanedId.isNotEmpty) {
-      return cleanedId;
-    }
-
     final phoneDigits = rawPhone.replaceAll(RegExp(r'\D'), '');
     if (phoneDigits.isNotEmpty) {
       return phoneDigits;
+    }
+
+    final cleanedId = rawId.trim();
+    if (cleanedId.isNotEmpty) {
+      return cleanedId;
     }
 
     return 'patient_inconnu';
@@ -68,6 +70,11 @@ class _MedicalRecordCreatePageState
         .trim()
         .replaceAll(RegExp(r'[ \t]+'), ' ')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+  }
+
+  String? _cleanNullableMultilineText(String value) {
+    final cleaned = _cleanMultilineText(value);
+    return cleaned.isEmpty ? null : cleaned;
   }
 
   Future<void> _pickRecordDate() async {
@@ -92,14 +99,24 @@ class _MedicalRecordCreatePageState
     if (!isValid || _isSaving) return;
 
     final user = ref.read(authControllerProvider).user;
+    if (user == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Utilisateur introuvable. Veuillez vous reconnecter.'),
+          ),
+        );
+      return;
+    }
 
-    final patientName = user?.name.trim().isNotEmpty == true
-        ? user!.name.trim()
+    final patientName = user.name.trim().isNotEmpty
+        ? user.name.trim()
         : 'Utilisateur';
 
     final patientId = _normalizePatientId(
-      rawId: user?.id ?? '',
-      rawPhone: user?.phone ?? '',
+      rawId: user.id,
+      rawPhone: user.phone,
     );
 
     FocusScope.of(context).unfocus();
@@ -122,7 +139,7 @@ class _MedicalRecordCreatePageState
       sourceLabel: _cleanText(_sourceCtrl.text),
       summary: _cleanMultilineText(_summaryCtrl.text),
       isSensitive: _isSensitive,
-      description: _cleanMultilineText(_summaryCtrl.text),
+      description: _cleanNullableMultilineText(_descriptionCtrl.text),
     );
 
     try {
@@ -131,22 +148,26 @@ class _MedicalRecordCreatePageState
       if (!mounted) return;
       setState(() => _isSaving = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Document médical créé.'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Document médical créé.'),
+          ),
+        );
 
       Navigator.of(context).pop();
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSaving = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de créer le document médical.'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Impossible de créer le document médical.'),
+          ),
+        );
     }
   }
 
@@ -268,18 +289,32 @@ class _MedicalRecordCreatePageState
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _summaryCtrl,
+                        minLines: 3,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.newline,
+                        decoration: const InputDecoration(
+                          labelText: 'Résumé',
+                          alignLabelWithHint: true,
+                          hintText:
+                              'Résumé court du contenu principal du document...',
+                          prefixIcon: Icon(Icons.summarize_outlined),
+                        ),
+                        validator: (value) =>
+                            _requiredValidator(value, 'Résumé'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _descriptionCtrl,
                         minLines: 4,
                         maxLines: 6,
                         textInputAction: TextInputAction.newline,
                         decoration: const InputDecoration(
-                          labelText: 'Résumé / description',
+                          labelText: 'Description détaillée (optionnelle)',
                           alignLabelWithHint: true,
                           hintText:
-                              'Décrivez le contenu principal du document...',
+                              'Ajoutez des précisions complémentaires sur le document...',
                           prefixIcon: Icon(Icons.notes_outlined),
                         ),
-                        validator: (value) =>
-                            _requiredValidator(value, 'Résumé'),
                       ),
                       const SizedBox(height: 12),
                       SwitchListTile(

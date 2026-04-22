@@ -9,6 +9,13 @@ enum MedicalRecordCategory {
   other,
 }
 
+enum MedicalRecordOrigin {
+  manualPatientEntry,
+  professionalAppointmentReport,
+  professionalManualEntry,
+  imported,
+}
+
 @immutable
 class MedicalRecord {
   MedicalRecord({
@@ -23,15 +30,28 @@ class MedicalRecord {
     required String summary,
     required this.isSensitive,
     String? description,
+    DateTime? updatedAt,
+    MedicalRecordOrigin? origin,
+    String? linkedAppointmentId,
+    String? authorProfessionalId,
+    String? authorProfessionalName,
   })  : id = _cleanText(id),
         patientId = _cleanText(patientId),
         title = _cleanText(title),
         recordDate = _normalizeDate(recordDate),
-        createdAt = createdAt,
+        createdAt = _normalizeDateTime(createdAt),
+        updatedAt = _normalizeDateTime(updatedAt ?? createdAt),
         patientName = _cleanText(patientName),
         sourceLabel = _cleanText(sourceLabel),
         summary = _cleanMultilineText(summary),
-        description = _cleanNullableMultilineText(description);
+        description = _cleanNullableMultilineText(description),
+        origin = origin ?? _inferOrigin(
+          category: category,
+          linkedAppointmentId: linkedAppointmentId,
+        ),
+        linkedAppointmentId = _cleanNullableText(linkedAppointmentId),
+        authorProfessionalId = _cleanNullableText(authorProfessionalId),
+        authorProfessionalName = _cleanNullableText(authorProfessionalName);
 
   final String id;
   final String patientId;
@@ -39,14 +59,18 @@ class MedicalRecord {
   final MedicalRecordCategory category;
   final DateTime recordDate;
   final DateTime createdAt;
+  final DateTime updatedAt;
 
   final String patientName;
   final String sourceLabel;
   final String summary;
   final bool isSensitive;
-
-  /// Champ enrichi pour la suite, sans casser l’existant.
   final String? description;
+
+  final MedicalRecordOrigin origin;
+  final String? linkedAppointmentId;
+  final String? authorProfessionalId;
+  final String? authorProfessionalName;
 
   bool get hasDescription {
     final desc = description?.trim();
@@ -61,6 +85,20 @@ class MedicalRecord {
     return summary.trim();
   }
 
+  bool get isLinkedToAppointment {
+    final linkedId = linkedAppointmentId?.trim();
+    return linkedId != null && linkedId.isNotEmpty;
+  }
+
+  bool get hasAuthorProfessional {
+    final id = authorProfessionalId?.trim();
+    final name = authorProfessionalName?.trim();
+    return (id != null && id.isNotEmpty) || (name != null && name.isNotEmpty);
+  }
+
+  bool get isAppointmentReportOrigin =>
+      origin == MedicalRecordOrigin.professionalAppointmentReport;
+
   MedicalRecord copyWith({
     String? id,
     String? patientId,
@@ -68,11 +106,20 @@ class MedicalRecord {
     MedicalRecordCategory? category,
     DateTime? recordDate,
     DateTime? createdAt,
+    DateTime? updatedAt,
     String? patientName,
     String? sourceLabel,
     String? summary,
     bool? isSensitive,
     String? description,
+    MedicalRecordOrigin? origin,
+    String? linkedAppointmentId,
+    String? authorProfessionalId,
+    String? authorProfessionalName,
+    bool clearDescription = false,
+    bool clearLinkedAppointmentId = false,
+    bool clearAuthorProfessionalId = false,
+    bool clearAuthorProfessionalName = false,
   }) {
     return MedicalRecord(
       id: id ?? this.id,
@@ -81,11 +128,22 @@ class MedicalRecord {
       category: category ?? this.category,
       recordDate: recordDate ?? this.recordDate,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       patientName: patientName ?? this.patientName,
       sourceLabel: sourceLabel ?? this.sourceLabel,
       summary: summary ?? this.summary,
       isSensitive: isSensitive ?? this.isSensitive,
-      description: description ?? this.description,
+      description: clearDescription ? null : (description ?? this.description),
+      origin: origin ?? this.origin,
+      linkedAppointmentId: clearLinkedAppointmentId
+          ? null
+          : (linkedAppointmentId ?? this.linkedAppointmentId),
+      authorProfessionalId: clearAuthorProfessionalId
+          ? null
+          : (authorProfessionalId ?? this.authorProfessionalId),
+      authorProfessionalName: clearAuthorProfessionalName
+          ? null
+          : (authorProfessionalName ?? this.authorProfessionalName),
     );
   }
 
@@ -97,27 +155,46 @@ class MedicalRecord {
       'category': category.name,
       'recordDate': recordDate.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
       'patientName': patientName,
       'sourceLabel': sourceLabel,
       'summary': summary,
       'isSensitive': isSensitive,
       'description': description,
+      'origin': origin.name,
+      'linkedAppointmentId': linkedAppointmentId,
+      'authorProfessionalId': authorProfessionalId,
+      'authorProfessionalName': authorProfessionalName,
     };
   }
 
   factory MedicalRecord.fromMap(Map<String, dynamic> map) {
+    final category = _categoryFromString(map['category'] as String?);
+
+    final linkedAppointmentId =
+        _cleanNullableText(map['linkedAppointmentId'] as String?);
+
     return MedicalRecord(
       id: (map['id'] as String?) ?? '',
       patientId: (map['patientId'] as String?) ?? '',
       title: (map['title'] as String?) ?? '',
-      category: _categoryFromString(map['category'] as String?),
+      category: category,
       recordDate: _parseDateOrNow(map['recordDate']),
       createdAt: _parseDateOrNow(map['createdAt']),
+      updatedAt: _parseNullableDate(map['updatedAt']),
       patientName: (map['patientName'] as String?) ?? '',
       sourceLabel: (map['sourceLabel'] as String?) ?? '',
       summary: (map['summary'] as String?) ?? '',
       isSensitive: (map['isSensitive'] as bool?) ?? true,
       description: map['description'] as String?,
+      origin: _originFromString(
+        map['origin'] as String?,
+        fallbackCategory: category,
+        fallbackLinkedAppointmentId: linkedAppointmentId,
+      ),
+      linkedAppointmentId: linkedAppointmentId,
+      authorProfessionalId: map['authorProfessionalId'] as String?,
+      authorProfessionalName: map['authorProfessionalName'] as String?,
     );
   }
 
@@ -138,6 +215,43 @@ class MedicalRecord {
     }
   }
 
+  static MedicalRecordOrigin _originFromString(
+    String? raw, {
+    required MedicalRecordCategory fallbackCategory,
+    required String? fallbackLinkedAppointmentId,
+  }) {
+    switch (raw) {
+      case 'manualPatientEntry':
+        return MedicalRecordOrigin.manualPatientEntry;
+      case 'professionalAppointmentReport':
+        return MedicalRecordOrigin.professionalAppointmentReport;
+      case 'professionalManualEntry':
+        return MedicalRecordOrigin.professionalManualEntry;
+      case 'imported':
+        return MedicalRecordOrigin.imported;
+      default:
+        return _inferOrigin(
+          category: fallbackCategory,
+          linkedAppointmentId: fallbackLinkedAppointmentId,
+        );
+    }
+  }
+
+  static MedicalRecordOrigin _inferOrigin({
+    required MedicalRecordCategory category,
+    required String? linkedAppointmentId,
+  }) {
+    final normalizedLinkedId = _cleanNullableText(linkedAppointmentId);
+
+    if (category == MedicalRecordCategory.report &&
+        normalizedLinkedId != null &&
+        normalizedLinkedId.isNotEmpty) {
+      return MedicalRecordOrigin.professionalAppointmentReport;
+    }
+
+    return MedicalRecordOrigin.manualPatientEntry;
+  }
+
   static DateTime _parseDateOrNow(Object? raw) {
     if (raw is String) {
       final parsed = DateTime.tryParse(raw);
@@ -148,12 +262,33 @@ class MedicalRecord {
     return DateTime.now();
   }
 
+  static DateTime? _parseNullableDate(Object? raw) {
+    if (raw is String && raw.trim().isNotEmpty) {
+      return DateTime.tryParse(raw);
+    }
+    return null;
+  }
+
   static DateTime _normalizeDate(DateTime value) {
     return DateTime(value.year, value.month, value.day);
   }
 
+  static DateTime _normalizeDateTime(DateTime value) {
+    return DateTime.fromMillisecondsSinceEpoch(
+      value.millisecondsSinceEpoch,
+      isUtc: value.isUtc,
+    );
+  }
+
   static String _cleanText(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  static String? _cleanNullableText(String? value) {
+    if (value == null) return null;
+
+    final cleaned = _cleanText(value);
+    return cleaned.isEmpty ? null : cleaned;
   }
 
   static String _cleanMultilineText(String value) {
@@ -181,11 +316,16 @@ class MedicalRecord {
         other.category == category &&
         other.recordDate == recordDate &&
         other.createdAt == createdAt &&
+        other.updatedAt == updatedAt &&
         other.patientName == patientName &&
         other.sourceLabel == sourceLabel &&
         other.summary == summary &&
         other.isSensitive == isSensitive &&
-        other.description == description;
+        other.description == description &&
+        other.origin == origin &&
+        other.linkedAppointmentId == linkedAppointmentId &&
+        other.authorProfessionalId == authorProfessionalId &&
+        other.authorProfessionalName == authorProfessionalName;
   }
 
   @override
@@ -197,11 +337,16 @@ class MedicalRecord {
       category,
       recordDate,
       createdAt,
+      updatedAt,
       patientName,
       sourceLabel,
       summary,
       isSensitive,
       description,
+      origin,
+      linkedAppointmentId,
+      authorProfessionalId,
+      authorProfessionalName,
     );
   }
 
@@ -211,7 +356,9 @@ class MedicalRecord {
         'id: $id, '
         'patientId: $patientId, '
         'title: $title, '
-        'category: $category'
+        'category: $category, '
+        'origin: $origin, '
+        'linkedAppointmentId: $linkedAppointmentId'
         ')';
   }
 }

@@ -158,8 +158,7 @@ final medicalRecordsListProvider = FutureProvider<List<MedicalRecord>>(
     final repo = ref.watch(medicalRecordsRepositoryProvider);
     final items = await repo.listAll();
 
-    final sorted = [...items]
-      ..sort((a, b) => b.recordDate.compareTo(a.recordDate));
+    final sorted = [...items]..sort(_compareMedicalRecordsNewestFirstStable);
 
     return List<MedicalRecord>.unmodifiable(sorted);
   },
@@ -206,8 +205,7 @@ final medicalRecordsByPatientIdProvider =
   );
 
   final items = await repo.listAll();
-  final sorted = [...items]
-    ..sort((a, b) => b.recordDate.compareTo(a.recordDate));
+  final sorted = [...items]..sort(_compareMedicalRecordsNewestFirstStable);
 
   return List<MedicalRecord>.unmodifiable(sorted);
 }, name: 'medicalRecordsByPatientIdProvider');
@@ -354,7 +352,7 @@ class MedicalRecordsController {
   }
 
   void _invalidatePatientCollection(String patientId) {
-    final normalizedPatientId = patientId.trim();
+    final normalizedPatientId = _normalizePatientStorageKey(patientId);
     if (normalizedPatientId.isEmpty) return;
     _ref.invalidate(medicalRecordsByPatientIdProvider(normalizedPatientId));
   }
@@ -370,7 +368,12 @@ bool _matchesMedicalRecordQuery({
     '${item.title} '
     '${item.sourceLabel} '
     '${item.summary} '
-    '${item.patientName}',
+    '${item.patientName} '
+    '${item.description ?? ''} '
+    '${item.authorProfessionalName ?? ''} '
+    '${item.authorProfessionalId ?? ''} '
+    '${item.linkedAppointmentId ?? ''} '
+    '${item.origin.name}',
   );
 
   return haystack.contains(query);
@@ -383,15 +386,39 @@ int _compareMedicalRecords({
 }) {
   switch (sortMode) {
     case MedicalRecordsSortMode.newestFirst:
-      return b.recordDate.compareTo(a.recordDate);
+      return _compareMedicalRecordsNewestFirstStable(a, b);
     case MedicalRecordsSortMode.oldestFirst:
-      return a.recordDate.compareTo(b.recordDate);
+      return _compareMedicalRecordsOldestFirstStable(a, b);
     case MedicalRecordsSortMode.titleAsc:
       final byTitle =
           a.title.toLowerCase().compareTo(b.title.toLowerCase());
       if (byTitle != 0) return byTitle;
-      return b.recordDate.compareTo(a.recordDate);
+
+      final byRecordDate = b.recordDate.compareTo(a.recordDate);
+      if (byRecordDate != 0) return byRecordDate;
+
+      return b.updatedAt.compareTo(a.updatedAt);
   }
+}
+
+int _compareMedicalRecordsNewestFirstStable(MedicalRecord a, MedicalRecord b) {
+  final byRecordDate = b.recordDate.compareTo(a.recordDate);
+  if (byRecordDate != 0) return byRecordDate;
+
+  final byUpdatedAt = b.updatedAt.compareTo(a.updatedAt);
+  if (byUpdatedAt != 0) return byUpdatedAt;
+
+  return b.createdAt.compareTo(a.createdAt);
+}
+
+int _compareMedicalRecordsOldestFirstStable(MedicalRecord a, MedicalRecord b) {
+  final byRecordDate = a.recordDate.compareTo(b.recordDate);
+  if (byRecordDate != 0) return byRecordDate;
+
+  final byUpdatedAt = a.updatedAt.compareTo(b.updatedAt);
+  if (byUpdatedAt != 0) return byUpdatedAt;
+
+  return a.createdAt.compareTo(b.createdAt);
 }
 
 String _normalizeQuery(String value) {

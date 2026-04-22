@@ -24,6 +24,7 @@ class _MedicalRecordEditPageState
   final _titleCtrl = TextEditingController();
   final _sourceCtrl = TextEditingController();
   final _summaryCtrl = TextEditingController();
+  final _descriptionCtrl = TextEditingController();
 
   MedicalRecordCategory _category = MedicalRecordCategory.prescription;
   DateTime _recordDate = DateTime.now();
@@ -36,6 +37,7 @@ class _MedicalRecordEditPageState
     _titleCtrl.dispose();
     _sourceCtrl.dispose();
     _summaryCtrl.dispose();
+    _descriptionCtrl.dispose();
     super.dispose();
   }
 
@@ -58,6 +60,11 @@ class _MedicalRecordEditPageState
         .replaceAll(RegExp(r'\n{3,}'), '\n\n');
   }
 
+  String? _cleanNullableMultilineText(String value) {
+    final cleaned = _cleanMultilineText(value);
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
   void _showMessage(String message) {
     final messenger = ScaffoldMessenger.of(context);
     messenger
@@ -71,6 +78,7 @@ class _MedicalRecordEditPageState
     _titleCtrl.text = record.title;
     _sourceCtrl.text = record.sourceLabel;
     _summaryCtrl.text = record.summary;
+    _descriptionCtrl.text = record.description ?? '';
     _category = record.category;
     _recordDate = DateTime(
       record.recordDate.year,
@@ -106,6 +114,7 @@ class _MedicalRecordEditPageState
     final cleanedTitle = _cleanText(_titleCtrl.text);
     final cleanedSource = _cleanText(_sourceCtrl.text);
     final cleanedSummary = _cleanMultilineText(_summaryCtrl.text);
+    final cleanedDescription = _cleanNullableMultilineText(_descriptionCtrl.text);
 
     final updated = current.copyWith(
       title: cleanedTitle,
@@ -118,7 +127,7 @@ class _MedicalRecordEditPageState
       sourceLabel: cleanedSource,
       summary: cleanedSummary,
       isSensitive: _isSensitive,
-      description: cleanedSummary,
+      description: cleanedDescription,
     );
 
     try {
@@ -270,16 +279,29 @@ class _MedicalRecordEditPageState
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _summaryCtrl,
+                    minLines: 3,
+                    maxLines: 4,
+                    textInputAction: TextInputAction.newline,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'Résumé',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.summarize_outlined),
+                    ),
+                    validator: (value) => _requiredValidator(value, 'Résumé'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _descriptionCtrl,
                     minLines: 4,
                     maxLines: 6,
                     textInputAction: TextInputAction.newline,
                     textCapitalization: TextCapitalization.sentences,
                     decoration: const InputDecoration(
-                      labelText: 'Résumé / description',
+                      labelText: 'Description détaillée (optionnelle)',
                       alignLabelWithHint: true,
                       prefixIcon: Icon(Icons.notes_outlined),
                     ),
-                    validator: (value) => _requiredValidator(value, 'Résumé'),
                   ),
                   const SizedBox(height: 12),
                   SwitchListTile(

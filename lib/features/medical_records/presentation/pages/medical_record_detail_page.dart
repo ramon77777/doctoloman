@@ -185,6 +185,10 @@ class MedicalRecordDetailPage extends ConsumerWidget {
         final isAppointmentReport =
             record.category == MedicalRecordCategory.report;
         final linkedAppointmentId = _linkedAppointmentId(record);
+        final hasDetailedDescription =
+            !isAppointmentReport &&
+            record.hasDescription &&
+            record.description!.trim() != record.summary.trim();
 
         return Scaffold(
           appBar: AppBar(
@@ -376,14 +380,14 @@ class MedicalRecordDetailPage extends ConsumerWidget {
                   _AppointmentReportDetailsCard(
                     description: record.description,
                   ),
-                ] else if (record.hasDescription) ...[
+                ] else if (hasDetailedDescription) ...[
                   const SizedBox(height: 14),
                   _InfoSectionCard(
-                    title: 'Description',
+                    title: 'Description détaillée',
                     icon: Icons.notes_outlined,
                     children: [
                       Text(
-                        record.effectiveDescription,
+                        record.description!.trim(),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],

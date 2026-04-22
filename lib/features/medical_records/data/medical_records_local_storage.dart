@@ -25,9 +25,13 @@ class MedicalRecordsLocalStorage {
       return List<MedicalRecord>.unmodifiable(items);
     }
 
-    final legacyItems = _readLegacyRecords();
-    if (legacyItems.isNotEmpty) {
-      return List<MedicalRecord>.unmodifiable(legacyItems);
+    // Fallback legacy autorisé uniquement si aucune structure multi-patient
+    // n'existe encore. Cela évite d'exposer les documents d'un autre patient.
+    if (recordsMap.isEmpty) {
+      final legacyItems = _readLegacyRecords();
+      if (legacyItems.isNotEmpty) {
+        return List<MedicalRecord>.unmodifiable(legacyItems);
+      }
     }
 
     return const <MedicalRecord>[];
@@ -42,7 +46,10 @@ class MedicalRecordsLocalStorage {
       return;
     }
 
-    final recordsMap = Map<String, List<MedicalRecord>>.from(_readAllRecordsMap());
+    final recordsMap = Map<String, List<MedicalRecord>>.from(
+      _readAllRecordsMap(),
+    );
+
     recordsMap[normalizedPatientKey] = List<MedicalRecord>.unmodifiable(items);
 
     await _persistRecordsMap(recordsMap);
@@ -54,7 +61,10 @@ class MedicalRecordsLocalStorage {
       return;
     }
 
-    final recordsMap = Map<String, List<MedicalRecord>>.from(_readAllRecordsMap());
+    final recordsMap = Map<String, List<MedicalRecord>>.from(
+      _readAllRecordsMap(),
+    );
+
     recordsMap.remove(normalizedPatientKey);
 
     await _persistRecordsMap(recordsMap);
@@ -93,11 +103,12 @@ class MedicalRecordsLocalStorage {
               }
             }
 
-            result[normalizedPatientKey] = List<MedicalRecord>.unmodifiable(items);
+            result[normalizedPatientKey] =
+                List<MedicalRecord>.unmodifiable(items);
           });
         }
       } catch (_) {
-        // Ignore et tente la lecture legacy plus bas si nécessaire.
+        // Ignore et laisse readAllByPatient gérer l'absence de map valide.
       }
     }
 

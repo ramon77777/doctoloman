@@ -38,7 +38,8 @@ final appointmentReportByAppointmentIdProvider =
   if (normalizedId.isEmpty) return null;
 
   final reportRepo = ref.watch(appointmentReportsRepositoryProvider);
-  final appointment = await ref.watch(appointmentByIdProvider(normalizedId).future);
+  final appointment =
+      await ref.watch(appointmentByIdProvider(normalizedId).future);
 
   if (appointment == null) {
     return null;
@@ -106,19 +107,24 @@ class AppointmentReportsController {
   final MedicalRecordsLocalStorage _medicalRecordsLocalStorage;
 
   Future<void> save(AppointmentReport report) async {
-    final securedAppointment = await _resolveAuthorizedConfirmedAppointment(
+    final securedAppointment = await _resolveAuthorizedCompletedAppointment(
       report.appointmentId,
     );
 
     if (securedAppointment == null) {
       throw StateError(
-        'Enregistrement refusé : rendez-vous introuvable, non confirmé ou non autorisé.',
+        'Enregistrement refusé : rendez-vous introuvable, non terminé, non confirmé ou non autorisé.',
       );
     }
+
+    final existingReport = await _reportsRepo.getByAppointmentId(
+      securedAppointment.id,
+    );
 
     final securedReport = _buildSecuredReport(
       base: report,
       appointment: securedAppointment,
+      existingReport: existingReport,
     );
 
     await _reportsRepo.save(securedReport);
@@ -128,26 +134,27 @@ class AppointmentReportsController {
       appointmentReportByAppointmentIdProvider(securedReport.appointmentId),
     );
 
-    _invalidateMedicalRecordViews(securedReport.patientId);
+    _invalidateMedicalRecordViews(
+      patientId: securedReport.patientId,
+      appointmentId: securedReport.appointmentId,
+    );
   }
 
   Future<void> deleteById({
     required String id,
     required String appointmentId,
   }) async {
-    final securedAppointment = await _resolveAuthorizedConfirmedAppointment(
+    final securedAppointment = await _resolveAuthorizedCompletedAppointment(
       appointmentId,
     );
 
     if (securedAppointment == null) {
       throw StateError(
-        'Suppression refusée : rendez-vous introuvable, non confirmé ou non autorisé.',
+        'Suppression refusée : rendez-vous introuvable, non terminé, non confirmé ou non autorisé.',
       );
     }
 
-    final existingReport =
-        await _reportsRepo.getByAppointmentId(appointmentId);
-
+    final existingReport = await _reportsRepo.getByAppointmentId(appointmentId);
     if (existingReport == null) {
       return;
     }
@@ -158,16 +165,19 @@ class AppointmentReportsController {
     }
 
     await _reportsRepo.deleteById(normalizedId);
+    await _deleteLinkedMedicalRecord(existingReport);
 
     _ref.invalidate(
       appointmentReportByAppointmentIdProvider(appointmentId),
     );
 
-    await _deleteLinkedMedicalRecord(existingReport);
-    _invalidateMedicalRecordViews(existingReport.patientId);
+    _invalidateMedicalRecordViews(
+      patientId: existingReport.patientId,
+      appointmentId: appointmentId,
+    );
   }
 
-  Future<Appointment?> _resolveAuthorizedConfirmedAppointment(
+  Future<Appointment?> _resolveAuthorizedCompletedAppointment(
     String appointmentId,
   ) async {
     final normalizedId = appointmentId.trim();
@@ -194,6 +204,11 @@ class AppointmentReportsController {
       return null;
     }
 
+    // Défense en profondeur : impossible d'écrire le bilan avant l'heure.
+    if (appointment.isUpcoming) {
+      return null;
+    }
+
     final profile = _ref.read(professionalProfileProvider);
 
     final allowed = _belongsToProfessional(
@@ -212,15 +227,19 @@ class AppointmentReportsController {
   AppointmentReport _buildSecuredReport({
     required AppointmentReport base,
     required Appointment appointment,
+    required AppointmentReport? existingReport,
   }) {
     final now = DateTime.now();
-
-    final existingId = base.id.trim();
     final normalizedPatientId =
         _normalizePatientStorageKey(appointment.patientPhoneE164);
 
+    final existingId = existingReport?.id.trim() ?? '';
+    final baseId = base.id.trim();
+
     return AppointmentReport(
-      id: existingId.isEmpty ? 'ar_${now.microsecondsSinceEpoch}' : existingId,
+      id: existingId.isNotEmpty
+          ? existingId
+          : (baseId.isNotEmpty ? baseId : 'ar_${now.microsecondsSinceEpoch}'),
       appointmentId: appointment.id,
       patientId: normalizedPatientId,
       patientName: appointment.patientFullName,
@@ -235,14 +254,12 @@ class AppointmentReportsController {
       prescriptions: base.prescriptions,
       requestedExams: base.requestedExams,
       followUpInstructions: base.followUpInstructions,
-      createdAt: base.createdAt,
-      updatedAt: base.updatedAt,
+      createdAt: existingReport?.createdAt ?? base.createdAt,
+      updatedAt: now,
     );
   }
 
-  Future<void> _upsertLinkedMedicalRecord(
-    AppointmentReport report,
-  ) async {
+  Future<void> _upsertLinkedMedicalRecord(AppointmentReport report) async {
     final patientKey = _normalizePatientStorageKey(report.patientId);
     if (patientKey.isEmpty) return;
 
@@ -252,8 +269,7 @@ class AppointmentReportsController {
     );
 
     final linkedRecordId = _linkedMedicalRecordId(report.appointmentId);
-    final existingRecord =
-        await medicalRecordsRepo.getById(linkedRecordId);
+    final existingRecord = await medicalRecordsRepo.getById(linkedRecordId);
 
     final nextRecord = MedicalRecord(
       id: linkedRecordId,
@@ -280,9 +296,7 @@ class AppointmentReportsController {
     }
   }
 
-  Future<void> _deleteLinkedMedicalRecord(
-    AppointmentReport report,
-  ) async {
+  Future<void> _deleteLinkedMedicalRecord(AppointmentReport report) async {
     final patientKey = _normalizePatientStorageKey(report.patientId);
     if (patientKey.isEmpty) return;
 
@@ -296,23 +310,27 @@ class AppointmentReportsController {
     );
   }
 
-  void _invalidateMedicalRecordViews(String patientId) {
-    final normalizedPatientId =
-        _normalizePatientStorageKey(patientId);
+  void _invalidateMedicalRecordViews({
+    required String patientId,
+    required String appointmentId,
+  }) {
+    final normalizedPatientId = _normalizePatientStorageKey(patientId);
     if (normalizedPatientId.isEmpty) return;
-
-    final authUser = _ref.read(authControllerProvider).user;
-    final authPatientKey =
-        _normalizePatientStorageKey(authUser?.phone ?? '');
 
     _ref.invalidate(
       medicalRecordsByPatientIdProvider(normalizedPatientId),
     );
 
+    _ref.invalidate(
+      medicalRecordByIdProvider(_linkedMedicalRecordId(appointmentId)),
+    );
+
+    final authUser = _ref.read(authControllerProvider).user;
+    final authPatientKey = _normalizePatientStorageKey(authUser?.phone ?? '');
+
     if (authPatientKey == normalizedPatientId) {
       _ref.invalidate(medicalRecordsListProvider);
       _ref.invalidate(filteredMedicalRecordsProvider);
-      _ref.invalidate(medicalRecordsListProvider);
     }
   }
 
