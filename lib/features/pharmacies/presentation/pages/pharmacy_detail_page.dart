@@ -24,7 +24,13 @@ class PharmacyDetailPage extends ConsumerWidget {
   }
 
   Future<void> _callPharmacy(BuildContext context, String phone) async {
-    final cleaned = phone.replaceAll(' ', '');
+    final cleaned = phone.replaceAll(' ', '').trim();
+
+    if (cleaned.isEmpty) {
+      _showMessage(context, 'Numéro de téléphone indisponible.');
+      return;
+    }
+
     final uri = Uri(scheme: 'tel', path: cleaned);
 
     final ok = await launchUrl(
@@ -51,24 +57,57 @@ class PharmacyDetailPage extends ConsumerWidget {
       return;
     }
 
-    final destination = '$lat,$lng';
+    final label = Uri.encodeComponent(pharmacy.name);
+    final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)');
 
-    final mapsUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    final webUri = Uri.https(
+      'www.google.com',
+      '/maps/search/',
+      {
+        'api': '1',
+        'query': '$lat,$lng',
+      },
     );
 
-    final ok = await launchUrl(
-      mapsUri,
-      mode: LaunchMode.externalApplication,
-    );
+    try {
+      final geoOpened = await launchUrl(
+        geoUri,
+        mode: LaunchMode.externalApplication,
+      );
 
-    if (!ok && context.mounted) {
-      _showMessage(context, 'Impossible d’ouvrir l’itinéraire.');
+      if (geoOpened) return;
+
+      final webOpened = await launchUrl(
+        webUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!webOpened && context.mounted) {
+        _showMessage(context, 'Impossible d’ouvrir l’itinéraire.');
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+
+      final webOpened = await launchUrl(
+        webUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!webOpened && context.mounted) {
+        _showMessage(context, 'Impossible d’ouvrir l’itinéraire.');
+      }
     }
   }
 
   Future<void> _copyPhone(BuildContext context, String phone) async {
-    await Clipboard.setData(ClipboardData(text: phone));
+    final cleaned = phone.trim();
+
+    if (cleaned.isEmpty) {
+      _showMessage(context, 'Numéro de téléphone indisponible.');
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: cleaned));
 
     if (context.mounted) {
       _showMessage(context, 'Numéro copié.');
@@ -116,6 +155,10 @@ class PharmacyDetailPage extends ConsumerWidget {
             }
 
             final hasCoordinates = pharmacy.hasCoordinates;
+            final hasPhone = pharmacy.hasPhone;
+            final openingHours = pharmacy.hasOpeningHours
+                ? pharmacy.openingHours
+                : 'Horaires non renseignés';
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -129,7 +172,9 @@ class PharmacyDetailPage extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _callPharmacy(context, pharmacy.phone),
+                        onPressed: hasPhone
+                            ? () => _callPharmacy(context, pharmacy.phone)
+                            : null,
                         icon: const Icon(Icons.phone_outlined),
                         label: const Text('Appeler'),
                       ),
@@ -150,7 +195,9 @@ class PharmacyDetailPage extends ConsumerWidget {
                 SizedBox(
                   width: double.infinity,
                   child: TextButton.icon(
-                    onPressed: () => _copyPhone(context, pharmacy.phone),
+                    onPressed: hasPhone
+                        ? () => _copyPhone(context, pharmacy.phone)
+                        : null,
                     icon: const Icon(Icons.copy_outlined),
                     label: const Text('Copier le numéro'),
                   ),
@@ -160,13 +207,15 @@ class PharmacyDetailPage extends ConsumerWidget {
                   title: 'Informations',
                   icon: Icons.info_outline,
                   children: [
-                    _Line(label: 'Adresse', value: pharmacy.address),
+                    _Line(label: 'Adresse', value: pharmacy.fullAddress),
+                    _Line(label: 'Zone', value: pharmacy.locationLabel),
+                    _Line(label: 'Horaires', value: openingHours),
                     _Line(
-                      label: 'Zone',
-                      value: '${pharmacy.area} • ${pharmacy.city}',
+                      label: 'Téléphone',
+                      value: hasPhone
+                          ? pharmacy.phone
+                          : 'Téléphone non renseigné',
                     ),
-                    _Line(label: 'Horaires', value: pharmacy.openingHours),
-                    _Line(label: 'Téléphone', value: pharmacy.phone),
                     _Line(
                       label: 'Disponibilité',
                       value: pharmacy.isOnDuty
@@ -223,6 +272,8 @@ class _HeaderCard extends StatelessWidget {
   final Pharmacy pharmacy;
   final bool hasCoordinates;
 
+  bool get _isOpen24h => pharmacy.openingHours.trim().toLowerCase() == '24h/24';
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -272,6 +323,11 @@ class _HeaderCard extends StatelessWidget {
                         const _Badge(
                           text: 'De garde',
                           icon: Icons.nightlight_outlined,
+                        ),
+                      if (_isOpen24h)
+                        const _Badge(
+                          text: '24h/24',
+                          icon: Icons.access_time,
                         ),
                       if (hasCoordinates)
                         const _Badge(

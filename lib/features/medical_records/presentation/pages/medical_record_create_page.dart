@@ -98,6 +98,19 @@ class _MedicalRecordCreatePageState
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid || _isSaving) return;
 
+    if (_category == MedicalRecordCategory.report) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Les comptes rendus de consultation sont générés depuis un rendez-vous réalisé.',
+            ),
+          ),
+        );
+      return;
+    }
+
     final user = ref.read(authControllerProvider).user;
     if (user == null) {
       ScaffoldMessenger.of(context)
@@ -110,9 +123,8 @@ class _MedicalRecordCreatePageState
       return;
     }
 
-    final patientName = user.name.trim().isNotEmpty
-        ? user.name.trim()
-        : 'Utilisateur';
+    final patientName =
+        user.name.trim().isNotEmpty ? user.name.trim() : 'Utilisateur';
 
     final patientId = _normalizePatientId(
       rawId: user.id,
@@ -196,7 +208,7 @@ class _MedicalRecordCreatePageState
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Ajoutez un document médical structuré à votre dossier local.',
+                          'Ajoutez un document médical structuré à votre dossier local. Les comptes rendus de consultation sont générés automatiquement depuis les bilans de rendez-vous réalisés.',
                           style: textTheme.bodyMedium?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
@@ -251,10 +263,6 @@ class _MedicalRecordCreatePageState
                           DropdownMenuItem(
                             value: MedicalRecordCategory.certificate,
                             child: Text('Certificat'),
-                          ),
-                          DropdownMenuItem(
-                            value: MedicalRecordCategory.report,
-                            child: Text('Compte rendu'),
                           ),
                           DropdownMenuItem(
                             value: MedicalRecordCategory.other,

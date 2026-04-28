@@ -65,6 +65,13 @@ class _MedicalRecordEditPageState
     return cleaned.isEmpty ? null : cleaned;
   }
 
+  bool _isGeneratedAppointmentReport(MedicalRecord record) {
+    return record.category == MedicalRecordCategory.report ||
+        record.origin == MedicalRecordOrigin.professionalAppointmentReport ||
+        record.id.trim().startsWith('report_') ||
+        (record.linkedAppointmentId?.trim().isNotEmpty ?? false);
+  }
+
   void _showMessage(String message) {
     final messenger = ScaffoldMessenger.of(context);
     messenger
@@ -105,6 +112,13 @@ class _MedicalRecordEditPageState
   }
 
   Future<void> _save(MedicalRecord current) async {
+    if (_isGeneratedAppointmentReport(current)) {
+      _showMessage(
+        'Ce compte rendu provient d’un rendez-vous et ne peut pas être modifié ici.',
+      );
+      return;
+    }
+
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid || _isSaving) return;
 
@@ -114,7 +128,8 @@ class _MedicalRecordEditPageState
     final cleanedTitle = _cleanText(_titleCtrl.text);
     final cleanedSource = _cleanText(_sourceCtrl.text);
     final cleanedSummary = _cleanMultilineText(_summaryCtrl.text);
-    final cleanedDescription = _cleanNullableMultilineText(_descriptionCtrl.text);
+    final cleanedDescription =
+        _cleanNullableMultilineText(_descriptionCtrl.text);
 
     final updated = current.copyWith(
       title: cleanedTitle,
@@ -202,6 +217,10 @@ class _MedicalRecordEditPageState
               );
             }
 
+            if (_isGeneratedAppointmentReport(record)) {
+              return const _LockedGeneratedReportState();
+            }
+
             _hydrate(record);
 
             return Form(
@@ -242,10 +261,6 @@ class _MedicalRecordEditPageState
                       DropdownMenuItem(
                         value: MedicalRecordCategory.certificate,
                         child: Text('Certificat'),
-                      ),
-                      DropdownMenuItem(
-                        value: MedicalRecordCategory.report,
-                        child: Text('Compte rendu'),
                       ),
                       DropdownMenuItem(
                         value: MedicalRecordCategory.other,
@@ -339,6 +354,57 @@ class _MedicalRecordEditPageState
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _LockedGeneratedReportState extends StatelessWidget {
+  const _LockedGeneratedReportState();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  size: 44,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Modification non autorisée',
+                  style: textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Ce compte rendu provient d’un rendez-vous réalisé et doit être modifié depuis le bilan du rendez-vous par le professionnel concerné.',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Retour'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

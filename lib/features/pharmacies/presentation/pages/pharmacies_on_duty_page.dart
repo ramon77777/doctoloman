@@ -192,25 +192,55 @@ class _PharmaciesPageState extends ConsumerState<PharmaciesPage> {
       return;
     }
 
-    final destination = '$lat,$lng';
+    final label = Uri.encodeComponent(pharmacy.name);
+    final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)');
 
-    final mapsUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=$destination&travelmode=driving',
+    final webUri = Uri.https(
+      'www.google.com',
+      '/maps/search/',
+      {
+        'api': '1',
+        'query': '$lat,$lng',
+      },
     );
 
-    final ok = await launchUrl(
-      mapsUri,
-      mode: LaunchMode.externalApplication,
-    );
-
-    if (!mounted) return;
-
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible d’ouvrir l’itinéraire.'),
-        ),
+    try {
+      final geoOpened = await launchUrl(
+        geoUri,
+        mode: LaunchMode.externalApplication,
       );
+
+      if (geoOpened) return;
+
+      final webOpened = await launchUrl(
+        webUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!mounted) return;
+
+      if (!webOpened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impossible d’ouvrir l’itinéraire.'),
+          ),
+        );
+      }
+    } catch (_) {
+      final webOpened = await launchUrl(
+        webUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!mounted) return;
+
+      if (!webOpened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impossible d’ouvrir l’itinéraire.'),
+          ),
+        );
+      }
     }
   }
 
