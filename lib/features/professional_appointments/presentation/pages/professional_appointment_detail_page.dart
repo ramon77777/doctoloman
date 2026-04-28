@@ -38,8 +38,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(content: Text(successMessage)),
@@ -53,6 +52,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
     required AppointmentStatus newStatus,
     required String title,
     required String message,
+    required String confirmLabel,
     required String successMessage,
   }) async {
     final confirmed = await showDialog<bool>(
@@ -68,7 +68,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text('Confirmer'),
+                  child: Text(confirmLabel),
                 ),
               ],
             );
@@ -88,20 +88,29 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
   }
 
   bool _canWriteReport(Appointment appointment) {
-    return appointment.status == AppointmentStatus.confirmed &&
-        !appointment.isUpcoming;
+    return appointment.status == AppointmentStatus.completed;
   }
 
   String _reportLockedMessage(Appointment appointment) {
-    if (appointment.status != AppointmentStatus.confirmed) {
-      return 'Le bilan n’est accessible qu’après confirmation du rendez-vous.';
+    switch (appointment.status) {
+      case AppointmentStatus.pending:
+        return 'Le bilan sera accessible après confirmation puis réalisation du rendez-vous.';
+      case AppointmentStatus.confirmed:
+        if (appointment.isUpcoming) {
+          return 'Le bilan ne peut être rédigé qu’après la tenue effective du rendez-vous.';
+        }
+        return 'Marquez d’abord ce rendez-vous comme réalisé pour rédiger le bilan.';
+      case AppointmentStatus.cancelledByPatient:
+        return 'Le bilan n’est pas disponible pour un rendez-vous annulé par le patient.';
+      case AppointmentStatus.cancelledByProfessional:
+        return 'Le bilan n’est pas disponible pour un rendez-vous annulé par le professionnel.';
+      case AppointmentStatus.declinedByProfessional:
+        return 'Le bilan n’est pas disponible pour une demande refusée.';
+      case AppointmentStatus.noShow:
+        return 'Le bilan n’est pas disponible lorsqu’une absence patient a été signalée.';
+      case AppointmentStatus.completed:
+        return 'Le bilan est disponible pour ce rendez-vous réalisé.';
     }
-
-    if (appointment.isUpcoming) {
-      return 'Le bilan ne peut être rédigé qu’après la tenue effective du rendez-vous.';
-    }
-
-    return 'Le bilan n’est pas accessible pour ce rendez-vous.';
   }
 
   void _openReport(BuildContext context, Appointment appointment) {
@@ -198,6 +207,10 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                 AppointmentUiHelpers.canProfessionalDecline(appointment);
             final canCancelConfirmed =
                 AppointmentUiHelpers.canProfessionalCancelConfirmed(appointment);
+            final canComplete =
+                AppointmentUiHelpers.canProfessionalComplete(appointment);
+            final canMarkNoShow =
+                AppointmentUiHelpers.canProfessionalMarkNoShow(appointment);
 
             final canWriteReport = _canWriteReport(appointment);
 
@@ -212,6 +225,8 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                   canConfirm: canConfirm,
                   canDecline: canDecline,
                   canCancelConfirmed: canCancelConfirmed,
+                  canComplete: canComplete,
+                  canMarkNoShow: canMarkNoShow,
                 ),
                 const SizedBox(height: 14),
                 reportAsync.when(
@@ -374,6 +389,8 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                   canConfirm: canConfirm,
                   canDecline: canDecline,
                   canCancelConfirmed: canCancelConfirmed,
+                  canComplete: canComplete,
+                  canMarkNoShow: canMarkNoShow,
                   onConfirm: canConfirm
                       ? () => _confirmStatusChange(
                             context,
@@ -383,6 +400,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                             title: 'Confirmer le rendez-vous',
                             message:
                                 'Souhaitez-vous confirmer ce rendez-vous pour ${appointment.patientFullName} ?',
+                            confirmLabel: 'Confirmer',
                             successMessage: 'Rendez-vous confirmé.',
                           )
                       : null,
@@ -396,6 +414,7 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                             title: 'Refuser la demande',
                             message:
                                 'Souhaitez-vous refuser cette demande de rendez-vous pour ${appointment.patientFullName} ?',
+                            confirmLabel: 'Refuser',
                             successMessage: 'Demande refusée.',
                           )
                       : null,
@@ -405,11 +424,38 @@ class ProfessionalAppointmentDetailPage extends ConsumerWidget {
                             ref,
                             appointment: appointment,
                             newStatus:
-                                AppointmentStatus.declinedByProfessional,
+                                AppointmentStatus.cancelledByProfessional,
                             title: 'Annuler le rendez-vous',
                             message:
                                 'Souhaitez-vous annuler ce rendez-vous pour ${appointment.patientFullName} ?',
+                            confirmLabel: 'Annuler le RDV',
                             successMessage: 'Rendez-vous annulé.',
+                          )
+                      : null,
+                  onComplete: canComplete
+                      ? () => _confirmStatusChange(
+                            context,
+                            ref,
+                            appointment: appointment,
+                            newStatus: AppointmentStatus.completed,
+                            title: 'Marquer comme réalisé',
+                            message:
+                                'Confirmez-vous que le rendez-vous avec ${appointment.patientFullName} a bien été réalisé ?',
+                            confirmLabel: 'Marquer réalisé',
+                            successMessage: 'Rendez-vous marqué comme réalisé.',
+                          )
+                      : null,
+                  onMarkNoShow: canMarkNoShow
+                      ? () => _confirmStatusChange(
+                            context,
+                            ref,
+                            appointment: appointment,
+                            newStatus: AppointmentStatus.noShow,
+                            title: 'Signaler une absence patient',
+                            message:
+                                'Confirmez-vous que ${appointment.patientFullName} ne s’est pas présenté à ce rendez-vous ?',
+                            confirmLabel: 'Signaler absent',
+                            successMessage: 'Absence patient signalée.',
                           )
                       : null,
                 ),
@@ -639,11 +685,15 @@ class _ActionAvailabilityCard extends StatelessWidget {
     required this.canConfirm,
     required this.canDecline,
     required this.canCancelConfirmed,
+    required this.canComplete,
+    required this.canMarkNoShow,
   });
 
   final bool canConfirm;
   final bool canDecline;
   final bool canCancelConfirmed;
+  final bool canComplete;
+  final bool canMarkNoShow;
 
   @override
   Widget build(BuildContext context) {
@@ -653,7 +703,13 @@ class _ActionAvailabilityCard extends StatelessWidget {
       if (canConfirm) 'Confirmation disponible',
       if (canDecline) 'Refus disponible',
       if (canCancelConfirmed) 'Annulation du rendez-vous disponible',
-      if (!canConfirm && !canDecline && !canCancelConfirmed)
+      if (canComplete) 'Clôture comme réalisé disponible',
+      if (canMarkNoShow) 'Signalement d’absence disponible',
+      if (!canConfirm &&
+          !canDecline &&
+          !canCancelConfirmed &&
+          !canComplete &&
+          !canMarkNoShow)
         'Aucune action disponible actuellement',
     ];
 
@@ -700,21 +756,35 @@ class _ProfessionalActionsSection extends StatelessWidget {
     required this.canConfirm,
     required this.canDecline,
     required this.canCancelConfirmed,
+    required this.canComplete,
+    required this.canMarkNoShow,
     required this.onConfirm,
     required this.onDecline,
     required this.onCancelConfirmed,
+    required this.onComplete,
+    required this.onMarkNoShow,
   });
 
   final bool canConfirm;
   final bool canDecline;
   final bool canCancelConfirmed;
+  final bool canComplete;
+  final bool canMarkNoShow;
+
   final VoidCallback? onConfirm;
   final VoidCallback? onDecline;
   final VoidCallback? onCancelConfirmed;
+  final VoidCallback? onComplete;
+  final VoidCallback? onMarkNoShow;
 
   @override
   Widget build(BuildContext context) {
-    final hasAnyAction = canConfirm || canDecline || canCancelConfirmed;
+    final hasAnyAction = canConfirm ||
+        canDecline ||
+        canCancelConfirmed ||
+        canComplete ||
+        canMarkNoShow;
+
     if (!hasAnyAction) {
       return const SizedBox.shrink();
     }
@@ -731,7 +801,11 @@ class _ProfessionalActionsSection extends StatelessWidget {
               label: const Text('Confirmer le rendez-vous'),
             ),
           ),
-        if (canConfirm && (canDecline || canCancelConfirmed))
+        if (canConfirm &&
+            (canDecline ||
+                canCancelConfirmed ||
+                canComplete ||
+                canMarkNoShow))
           const SizedBox(height: 10),
         if (canDecline)
           SizedBox(
@@ -743,7 +817,9 @@ class _ProfessionalActionsSection extends StatelessWidget {
               label: const Text('Refuser la demande'),
             ),
           ),
-        if (canDecline && canCancelConfirmed) const SizedBox(height: 10),
+        if (canDecline &&
+            (canCancelConfirmed || canComplete || canMarkNoShow))
+          const SizedBox(height: 10),
         if (canCancelConfirmed)
           SizedBox(
             width: double.infinity,
@@ -752,6 +828,29 @@ class _ProfessionalActionsSection extends StatelessWidget {
               onPressed: onCancelConfirmed,
               icon: const Icon(Icons.event_busy_outlined),
               label: const Text('Annuler le rendez-vous'),
+            ),
+          ),
+        if (canCancelConfirmed && (canComplete || canMarkNoShow))
+          const SizedBox(height: 10),
+        if (canComplete)
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: onComplete,
+              icon: const Icon(Icons.task_alt_outlined),
+              label: const Text('Marquer comme réalisé'),
+            ),
+          ),
+        if (canComplete && canMarkNoShow) const SizedBox(height: 10),
+        if (canMarkNoShow)
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: onMarkNoShow,
+              icon: const Icon(Icons.person_off_outlined),
+              label: const Text('Signaler patient absent'),
             ),
           ),
       ],

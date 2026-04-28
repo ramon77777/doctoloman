@@ -74,9 +74,6 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
   @override
   Widget build(BuildContext context) {
     final appointmentsAsync = ref.watch(appointmentsListProvider);
-    final statsAsync = ref.watch(appointmentsStatsProvider);
-    final filteredAsync = ref.watch(filteredAppointmentsProvider);
-    final nextAppointmentAsync = ref.watch(nextUpcomingAppointmentProvider);
     final filters = ref.watch(appointmentsFiltersProvider);
 
     _syncSearchControllerIfNeeded(filters.query);
@@ -114,44 +111,43 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
               );
             }
 
+            final allSections = _AppointmentsSections.fromItems(items);
+            final nextAppointment = allSections.upcoming.isNotEmpty
+                ? allSections.upcoming.first
+                : null;
+
+            final filteredItems = _applyFilters(
+              items: items,
+              filter: filters.filter,
+              query: filters.query,
+            );
+
+            final filteredSections = _AppointmentsSections.fromItems(
+              filteredItems,
+            );
+
             return RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  statsAsync.when(
-                    data: (stats) => _AppointmentsStatsBar(
-                      totalCount: stats.totalCount,
-                      pendingCount: stats.pendingCount,
-                      upcomingConfirmedCount: stats.upcomingConfirmedCount,
-                      confirmedCount: stats.confirmedCount,
-                      cancelledCount: stats.cancelledCount,
-                    ),
-                    loading: () => const _StatsBarSkeleton(),
-                    error: (_, _) => const SizedBox.shrink(),
+                  _AppointmentsStatsBar(
+                    totalCount: items.length,
+                    pendingCount: allSections.pending.length,
+                    upcomingConfirmedCount: allSections.upcoming.length,
+                    historyCount: allSections.history.length,
+                    closedCount: allSections.closed.length,
                   ),
                   const SizedBox(height: 14),
                   const _ReminderInfoBanner(),
-                  nextAppointmentAsync.when(
-                    data: (appointment) {
-                      if (appointment == null ||
-                          filters.filter != AppointmentsViewFilter.all) {
-                        return const SizedBox.shrink();
-                      }
-
-                      return Column(
-                        children: [
-                          const SizedBox(height: 14),
-                          _NextAppointmentCard(
-                            appointment: appointment,
-                            onTap: () => _openDetail(context, appointment.id),
-                          ),
-                        ],
-                      );
-                    },
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, _) => const SizedBox.shrink(),
-                  ),
+                  if (nextAppointment != null &&
+                      filters.filter == AppointmentsViewFilter.all) ...[
+                    const SizedBox(height: 14),
+                    _NextAppointmentCard(
+                      appointment: nextAppointment,
+                      onTap: () => _openDetail(context, nextAppointment.id),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   TextField(
                     controller: _searchCtrl,
@@ -175,141 +171,35 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  statsAsync.when(
-                    data: (stats) => _AppointmentsFilterBar(
-                      selectedFilter: filters.filter,
-                      allCount: stats.totalCount,
-                      pendingCount: stats.pendingCount,
-                      upcomingCount: stats.upcomingConfirmedCount,
-                      historyCount: stats.historyCount,
-                      cancelledCount: stats.cancelledCount,
-                      onSelected: (value) {
-                        ref
-                            .read(appointmentsFiltersProvider.notifier)
-                            .setFilter(value);
-                      },
-                    ),
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, _) => const SizedBox.shrink(),
+                  _AppointmentsFilterBar(
+                    selectedFilter: filters.filter,
+                    allCount: items.length,
+                    pendingCount: allSections.pending.length,
+                    upcomingCount: allSections.upcoming.length,
+                    historyCount: allSections.history.length,
+                    closedCount: allSections.closed.length,
+                    onSelected: (value) {
+                      ref
+                          .read(appointmentsFiltersProvider.notifier)
+                          .setFilter(value);
+                    },
                   ),
                   const SizedBox(height: 16),
-                  filteredAsync.when(
-                    data: (filteredItems) {
-                      if (filteredItems.isEmpty) {
-                        return const EmptyStateView(
-                          icon: Icons.manage_search_outlined,
-                          title: 'Aucun résultat',
-                          message:
-                              'Aucun rendez-vous ne correspond à votre recherche ou au filtre sélectionné.',
-                        );
-                      }
-
-                      final sections = _AppointmentsSections.fromItems(
-                        filteredItems,
-                      );
-
-                      final widgets = <Widget>[];
-                      final showAll =
-                          filters.filter == AppointmentsViewFilter.all;
-
-                      void addSection({
-                        required String title,
-                        required String subtitle,
-                        required IconData icon,
-                        required List<Appointment> items,
-                      }) {
-                        if (items.isEmpty) return;
-
-                        if (widgets.isNotEmpty) {
-                          widgets.add(const SizedBox(height: 10));
-                        }
-
-                        widgets.add(
-                          _SectionTitle(
-                            title: title,
-                            subtitle: subtitle,
-                            icon: icon,
-                          ),
-                        );
-                        widgets.add(const SizedBox(height: 10));
-
-                        widgets.addAll(
-                          items.map(
-                            (appointment) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _AppointmentCard(
-                                appointment: appointment,
-                                highlight: filters.filter ==
-                                        AppointmentsViewFilter.upcoming &&
-                                    AppDateFormatters.isToday(
-                                      appointment.scheduledAt,
-                                    ),
-                                onTap: () => _openDetail(
-                                  context,
-                                  appointment.id,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      addSection(
-                        title: 'Demandes en attente',
-                        subtitle:
-                            'Demandes envoyées au professionnel en attente de réponse',
-                        icon: Icons.pending_actions_outlined,
-                        items: showAll ||
-                                filters.filter == AppointmentsViewFilter.pending
-                            ? sections.pending
-                            : const [],
-                      );
-
-                      addSection(
-                        title: 'Rendez-vous à venir',
-                        subtitle:
-                            'Rendez-vous confirmés, à venir ou prévus aujourd’hui',
-                        icon: Icons.event_available_outlined,
-                        items: showAll ||
-                                filters.filter == AppointmentsViewFilter.upcoming
-                            ? sections.upcoming
-                            : const [],
-                      );
-
-                      addSection(
-                        title: 'Historique',
-                        subtitle: 'Rendez-vous confirmés déjà passés',
-                        icon: Icons.history_outlined,
-                        items: showAll ||
-                                filters.filter == AppointmentsViewFilter.history
-                            ? sections.history
-                            : const [],
-                      );
-
-                      addSection(
-                        title: 'Clôturés',
-                        subtitle:
-                            'Demandes refusées ou rendez-vous annulés',
-                        icon: Icons.event_busy_outlined,
-                        items: showAll ||
-                                filters.filter ==
-                                    AppointmentsViewFilter.cancelled
-                            ? sections.cancelled
-                            : const [],
-                      );
-
-                      return Column(children: widgets);
-                    },
-                    loading: () => const Padding(
-                      padding: EdgeInsets.only(top: 24),
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
+                  if (filteredItems.isEmpty)
+                    const EmptyStateView(
+                      icon: Icons.manage_search_outlined,
+                      title: 'Aucun résultat',
+                      message:
+                          'Aucun rendez-vous ne correspond à votre recherche ou au filtre sélectionné.',
+                    )
+                  else
+                    _AppointmentsSectionsView(
+                      sections: filteredSections,
+                      selectedFilter: filters.filter,
+                      onOpenDetail: (appointmentId) {
+                        _openDetail(context, appointmentId);
+                      },
                     ),
-                    error: (error, _) => ErrorStateView(
-                      message: '$error',
-                    ),
-                  ),
                 ],
               ),
             );
@@ -331,13 +221,13 @@ class _AppointmentsSections {
     required this.pending,
     required this.upcoming,
     required this.history,
-    required this.cancelled,
+    required this.closed,
   });
 
   final List<Appointment> pending;
   final List<Appointment> upcoming;
   final List<Appointment> history;
-  final List<Appointment> cancelled;
+  final List<Appointment> closed;
 
   factory _AppointmentsSections.fromItems(List<Appointment> items) {
     final pending = items.where(AppointmentUiHelpers.isPending).toList()
@@ -347,17 +237,114 @@ class _AppointmentsSections {
         items.where(AppointmentUiHelpers.isUpcomingConfirmed).toList()
           ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final history = items.where(AppointmentUiHelpers.isHistory).toList()
+    final history = items.where(_isPatientHistoryAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
-    final cancelled = items.where(AppointmentUiHelpers.isClosed).toList()
+    final closed = items.where(_isPatientClosedAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     return _AppointmentsSections(
       pending: List<Appointment>.unmodifiable(pending),
       upcoming: List<Appointment>.unmodifiable(upcoming),
       history: List<Appointment>.unmodifiable(history),
-      cancelled: List<Appointment>.unmodifiable(cancelled),
+      closed: List<Appointment>.unmodifiable(closed),
+    );
+  }
+}
+
+class _AppointmentsSectionsView extends StatelessWidget {
+  const _AppointmentsSectionsView({
+    required this.sections,
+    required this.selectedFilter,
+    required this.onOpenDetail,
+  });
+
+  final _AppointmentsSections sections;
+  final AppointmentsViewFilter selectedFilter;
+  final ValueChanged<String> onOpenDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    final widgets = <Widget>[];
+    final showAll = selectedFilter == AppointmentsViewFilter.all;
+
+    void addSection({
+      required String title,
+      required String subtitle,
+      required IconData icon,
+      required List<Appointment> items,
+    }) {
+      if (items.isEmpty) return;
+
+      if (widgets.isNotEmpty) {
+        widgets.add(const SizedBox(height: 10));
+      }
+
+      widgets.add(
+        _SectionTitle(
+          title: title,
+          subtitle: subtitle,
+          icon: icon,
+        ),
+      );
+      widgets.add(const SizedBox(height: 10));
+
+      widgets.addAll(
+        items.map(
+          (appointment) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _AppointmentCard(
+              appointment: appointment,
+              highlight: selectedFilter == AppointmentsViewFilter.upcoming &&
+                  AppDateFormatters.isToday(appointment.scheduledAt),
+              onTap: () => onOpenDetail(appointment.id),
+            ),
+          ),
+        ),
+      );
+    }
+
+    addSection(
+      title: 'Demandes en attente',
+      subtitle:
+          'Demandes envoyées au professionnel en attente de réponse',
+      icon: Icons.pending_actions_outlined,
+      items: showAll || selectedFilter == AppointmentsViewFilter.pending
+          ? sections.pending
+          : const [],
+    );
+
+    addSection(
+      title: 'Rendez-vous à venir',
+      subtitle: 'Rendez-vous confirmés, à venir ou prévus aujourd’hui',
+      icon: Icons.event_available_outlined,
+      items: showAll || selectedFilter == AppointmentsViewFilter.upcoming
+          ? sections.upcoming
+          : const [],
+    );
+
+    addSection(
+      title: 'Historique',
+      subtitle: 'Rendez-vous passés ou réalisés',
+      icon: Icons.history_outlined,
+      items: showAll || selectedFilter == AppointmentsViewFilter.history
+          ? sections.history
+          : const [],
+    );
+
+    addSection(
+      title: 'Clôturés',
+      subtitle:
+          'Demandes refusées, rendez-vous annulés ou absences signalées',
+      icon: Icons.event_busy_outlined,
+      items: showAll || selectedFilter == AppointmentsViewFilter.cancelled
+          ? sections.closed
+          : const [],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: widgets,
     );
   }
 }
@@ -367,15 +354,15 @@ class _AppointmentsStatsBar extends StatelessWidget {
     required this.totalCount,
     required this.pendingCount,
     required this.upcomingConfirmedCount,
-    required this.confirmedCount,
-    required this.cancelledCount,
+    required this.historyCount,
+    required this.closedCount,
   });
 
   final int totalCount;
   final int pendingCount;
   final int upcomingConfirmedCount;
-  final int confirmedCount;
-  final int cancelledCount;
+  final int historyCount;
+  final int closedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -394,39 +381,10 @@ class _AppointmentsStatsBar extends StatelessWidget {
           _StatChip(label: '$totalCount total'),
           _StatChip(label: '$pendingCount en attente'),
           _StatChip(label: '$upcomingConfirmedCount à venir'),
-          _StatChip(label: '$confirmedCount confirmés'),
-          _StatChip(label: '$cancelledCount clos'),
+          _StatChip(label: '$historyCount historique'),
+          _StatChip(label: '$closedCount clos'),
         ],
       ),
-    );
-  }
-}
-
-class _StatsBarSkeleton extends StatelessWidget {
-  const _StatsBarSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    Widget chip() => Container(
-          height: 34,
-          width: 120,
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(999),
-          ),
-        );
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        chip(),
-        chip(),
-        chip(),
-        chip(),
-      ],
     );
   }
 }
@@ -539,7 +497,7 @@ class _AppointmentsFilterBar extends StatelessWidget {
     required this.pendingCount,
     required this.upcomingCount,
     required this.historyCount,
-    required this.cancelledCount,
+    required this.closedCount,
     required this.onSelected,
   });
 
@@ -548,7 +506,7 @@ class _AppointmentsFilterBar extends StatelessWidget {
   final int pendingCount;
   final int upcomingCount;
   final int historyCount;
-  final int cancelledCount;
+  final int closedCount;
   final ValueChanged<AppointmentsViewFilter> onSelected;
 
   @override
@@ -583,7 +541,7 @@ class _AppointmentsFilterBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _FilterChipItem(
-            label: 'Clos ($cancelledCount)',
+            label: 'Clos ($closedCount)',
             selected: selectedFilter == AppointmentsViewFilter.cancelled,
             onTap: () => onSelected(AppointmentsViewFilter.cancelled),
           ),
@@ -784,4 +742,74 @@ class _AppointmentCard extends StatelessWidget {
       ),
     );
   }
+}
+
+List<Appointment> _applyFilters({
+  required List<Appointment> items,
+  required AppointmentsViewFilter filter,
+  required String query,
+}) {
+  final normalizedQuery = _normalizeSearch(query);
+
+  final filteredByQuery = items.where((appointment) {
+    if (normalizedQuery.isEmpty) return true;
+
+    final haystack = _normalizeSearch(
+      '${appointment.practitionerName} '
+      '${appointment.specialty} '
+      '${appointment.fullAddress} '
+      '${appointment.reason} '
+      '${appointment.slot}',
+    );
+
+    return haystack.contains(normalizedQuery);
+  });
+
+  final filteredByStatus = filteredByQuery.where((appointment) {
+    switch (filter) {
+      case AppointmentsViewFilter.all:
+        return true;
+      case AppointmentsViewFilter.pending:
+        return AppointmentUiHelpers.isPending(appointment);
+      case AppointmentsViewFilter.upcoming:
+        return AppointmentUiHelpers.isUpcomingConfirmed(appointment);
+      case AppointmentsViewFilter.history:
+        return _isPatientHistoryAppointment(appointment);
+      case AppointmentsViewFilter.cancelled:
+        return _isPatientClosedAppointment(appointment);
+    }
+  }).toList();
+
+  filteredByStatus.sort(
+    (a, b) {
+      if (filter == AppointmentsViewFilter.history ||
+          filter == AppointmentsViewFilter.cancelled) {
+        return b.scheduledAt.compareTo(a.scheduledAt);
+      }
+
+      return a.scheduledAt.compareTo(b.scheduledAt);
+    },
+  );
+
+  return filteredByStatus;
+}
+
+bool _isPatientHistoryAppointment(Appointment appointment) {
+  return AppointmentUiHelpers.isHistory(appointment) ||
+      appointment.status == AppointmentStatus.completed;
+}
+
+bool _isPatientClosedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.cancelledByPatient ||
+      appointment.status == AppointmentStatus.cancelledByProfessional ||
+      appointment.status == AppointmentStatus.declinedByProfessional ||
+      appointment.status == AppointmentStatus.noShow;
+}
+
+String _normalizeSearch(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+      .replaceAll(RegExp(r'\s+'), ' ');
 }

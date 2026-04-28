@@ -18,7 +18,9 @@ enum _ProfessionalAppointmentsFilter {
   today,
   pending,
   upcoming,
-  past,
+  toClose,
+  completed,
+  noShow,
   closed,
 }
 
@@ -29,9 +31,12 @@ class _ProfessionalAppointmentsSections {
     required this.today,
     required this.pending,
     required this.upcomingConfirmed,
-    required this.pastConfirmed,
+    required this.toClose,
+    required this.completed,
+    required this.noShow,
     required this.declined,
     required this.patientCancelled,
+    required this.professionalCancelled,
     required this.closed,
   });
 
@@ -39,9 +44,12 @@ class _ProfessionalAppointmentsSections {
   final List<Appointment> today;
   final List<Appointment> pending;
   final List<Appointment> upcomingConfirmed;
-  final List<Appointment> pastConfirmed;
+  final List<Appointment> toClose;
+  final List<Appointment> completed;
+  final List<Appointment> noShow;
   final List<Appointment> declined;
   final List<Appointment> patientCancelled;
+  final List<Appointment> professionalCancelled;
   final List<Appointment> closed;
 }
 
@@ -126,8 +134,7 @@ class _ProfessionalAppointmentsPageState
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(content: Text(successMessage)),
@@ -202,6 +209,8 @@ class _ProfessionalAppointmentsPageState
                 sections.pending.isNotEmpty ? sections.pending.first : null;
             final nextToday =
                 sections.today.isNotEmpty ? sections.today.first : null;
+            final nextToClose =
+                sections.toClose.isNotEmpty ? sections.toClose.first : null;
 
             return RefreshIndicator(
               onRefresh: () => _refresh(ref),
@@ -212,20 +221,27 @@ class _ProfessionalAppointmentsPageState
                     totalCount: sections.all.length,
                     todayCount: sections.today.length,
                     pendingCount: sections.pending.length,
-                    confirmedCount: sections.upcomingConfirmed.length,
+                    upcomingCount: sections.upcomingConfirmed.length,
+                    toCloseCount: sections.toClose.length,
+                    completedCount: sections.completed.length,
+                    noShowCount: sections.noShow.length,
                     closedCount: sections.closed.length,
                   ),
                   const SizedBox(height: 14),
                   _SummaryBanner(
                     pendingCount: sections.pending.length,
                     todayCount: sections.today.length,
+                    toCloseCount: sections.toClose.length,
                   ),
                   if (_selectedFilter == _ProfessionalAppointmentsFilter.all &&
-                      (nextPending != null || nextToday != null)) ...[
+                      (nextPending != null ||
+                          nextToday != null ||
+                          nextToClose != null)) ...[
                     const SizedBox(height: 14),
                     _PrioritySnapshotCard(
                       nextPending: nextPending,
                       nextToday: nextToday,
+                      nextToClose: nextToClose,
                     ),
                   ],
                   const SizedBox(height: 14),
@@ -252,7 +268,9 @@ class _ProfessionalAppointmentsPageState
                     todayCount: sections.today.length,
                     pendingCount: sections.pending.length,
                     upcomingCount: sections.upcomingConfirmed.length,
-                    pastCount: sections.pastConfirmed.length,
+                    toCloseCount: sections.toClose.length,
+                    completedCount: sections.completed.length,
+                    noShowCount: sections.noShow.length,
                     closedCount: sections.closed.length,
                     onSelected: (value) {
                       setState(() => _selectedFilter = value);
@@ -285,7 +303,8 @@ class _ProfessionalAppointmentsPageState
   _ProfessionalAppointmentsSections _buildSectionsData(
     List<Appointment> items,
   ) {
-    final all = [...items]..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+    final all = [...items]
+      ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
     final today = all.where(_isTodayConfirmedAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
@@ -296,7 +315,13 @@ class _ProfessionalAppointmentsPageState
     final upcomingConfirmed = all.where(_isUpcomingConfirmedAppointment).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-    final pastConfirmed = all.where(_isPastConfirmedAppointment).toList()
+    final toClose = all.where(_isToCloseAppointment).toList()
+      ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    final completed = all.where(_isCompletedAppointment).toList()
+      ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
+    final noShow = all.where(_isNoShowAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     final declined = all.where(_isDeclinedAppointment).toList()
@@ -305,9 +330,14 @@ class _ProfessionalAppointmentsPageState
     final patientCancelled = all.where(_isPatientCancelledAppointment).toList()
       ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
+    final professionalCancelled =
+        all.where(_isProfessionalCancelledAppointment).toList()
+          ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
     final closed = <Appointment>[
       ...declined,
       ...patientCancelled,
+      ...professionalCancelled,
     ]..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
     return _ProfessionalAppointmentsSections(
@@ -315,9 +345,13 @@ class _ProfessionalAppointmentsPageState
       today: List<Appointment>.unmodifiable(today),
       pending: List<Appointment>.unmodifiable(pending),
       upcomingConfirmed: List<Appointment>.unmodifiable(upcomingConfirmed),
-      pastConfirmed: List<Appointment>.unmodifiable(pastConfirmed),
+      toClose: List<Appointment>.unmodifiable(toClose),
+      completed: List<Appointment>.unmodifiable(completed),
+      noShow: List<Appointment>.unmodifiable(noShow),
       declined: List<Appointment>.unmodifiable(declined),
       patientCancelled: List<Appointment>.unmodifiable(patientCancelled),
+      professionalCancelled:
+          List<Appointment>.unmodifiable(professionalCancelled),
       closed: List<Appointment>.unmodifiable(closed),
     );
   }
@@ -338,7 +372,7 @@ class _ProfessionalAppointmentsPageState
       required IconData icon,
       required List<Appointment> items,
       required _AppointmentCardEmphasis emphasis,
-      bool withPendingActions = false,
+      Widget Function(Appointment item)? actionsBuilder,
     }) {
       if (!visible || items.isEmpty) return;
 
@@ -370,35 +404,44 @@ class _ProfessionalAppointmentsPageState
                   ),
                 );
               },
-              actions: withPendingActions
-                  ? _PendingCardActions(
-                      onConfirm: () => _confirmStatusChange(
-                        context,
-                        ref,
-                        appointment: item,
-                        newStatus: AppointmentStatus.confirmed,
-                        title: 'Confirmer le rendez-vous',
-                        message:
-                            'Souhaitez-vous confirmer ce rendez-vous pour ${item.patientFullName} ?',
-                        successMessage: 'Rendez-vous confirmé.',
-                      ),
-                      onRefuse: () => _confirmStatusChange(
-                        context,
-                        ref,
-                        appointment: item,
-                        newStatus: AppointmentStatus.declinedByProfessional,
-                        title: 'Refuser la demande',
-                        message:
-                            'Souhaitez-vous refuser cette demande pour ${item.patientFullName} ?',
-                        successMessage: 'Demande refusée.',
-                      ),
-                    )
-                  : null,
+              actions: actionsBuilder?.call(item),
             ),
           ),
         ),
       );
     }
+
+    addSection(
+      visible:
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.pending,
+      title: 'Demandes en attente',
+      subtitle: 'À confirmer ou refuser',
+      icon: Icons.pending_actions_outlined,
+      items: sections.pending,
+      emphasis: _AppointmentCardEmphasis.pending,
+      actionsBuilder: (item) => _PendingCardActions(
+        onConfirm: () => _confirmStatusChange(
+          context,
+          ref,
+          appointment: item,
+          newStatus: AppointmentStatus.confirmed,
+          title: 'Confirmer le rendez-vous',
+          message:
+              'Souhaitez-vous confirmer ce rendez-vous pour ${item.patientFullName} ?',
+          successMessage: 'Rendez-vous confirmé.',
+        ),
+        onRefuse: () => _confirmStatusChange(
+          context,
+          ref,
+          appointment: item,
+          newStatus: AppointmentStatus.declinedByProfessional,
+          title: 'Refuser la demande',
+          message:
+              'Souhaitez-vous refuser cette demande pour ${item.patientFullName} ?',
+          successMessage: 'Demande refusée.',
+        ),
+      ),
+    );
 
     addSection(
       visible:
@@ -412,17 +455,6 @@ class _ProfessionalAppointmentsPageState
 
     addSection(
       visible:
-          showAll || selectedFilter == _ProfessionalAppointmentsFilter.pending,
-      title: 'Demandes en attente',
-      subtitle: 'À confirmer ou refuser',
-      icon: Icons.pending_actions_outlined,
-      items: sections.pending,
-      emphasis: _AppointmentCardEmphasis.pending,
-      withPendingActions: true,
-    );
-
-    addSection(
-      visible:
           showAll || selectedFilter == _ProfessionalAppointmentsFilter.upcoming,
       title: 'À venir',
       subtitle: 'Rendez-vous confirmés à venir',
@@ -432,12 +464,55 @@ class _ProfessionalAppointmentsPageState
     );
 
     addSection(
-      visible: showAll || selectedFilter == _ProfessionalAppointmentsFilter.past,
-      title: 'Passés',
-      subtitle: 'Historique des rendez-vous confirmés',
-      icon: Icons.history_outlined,
-      items: sections.pastConfirmed,
-      emphasis: _AppointmentCardEmphasis.past,
+      visible:
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.toClose,
+      title: 'À clôturer',
+      subtitle: 'Rendez-vous passés à marquer comme réalisés ou absents',
+      icon: Icons.fact_check_outlined,
+      items: sections.toClose,
+      emphasis: _AppointmentCardEmphasis.toClose,
+      actionsBuilder: (item) => _ToCloseCardActions(
+        onComplete: () => _confirmStatusChange(
+          context,
+          ref,
+          appointment: item,
+          newStatus: AppointmentStatus.completed,
+          title: 'Marquer comme réalisé',
+          message:
+              'Confirmez-vous que le rendez-vous avec ${item.patientFullName} a bien été réalisé ?',
+          successMessage: 'Rendez-vous marqué comme réalisé.',
+        ),
+        onNoShow: () => _confirmStatusChange(
+          context,
+          ref,
+          appointment: item,
+          newStatus: AppointmentStatus.noShow,
+          title: 'Signaler une absence patient',
+          message:
+              'Confirmez-vous que ${item.patientFullName} ne s’est pas présenté à ce rendez-vous ?',
+          successMessage: 'Absence patient signalée.',
+        ),
+      ),
+    );
+
+    addSection(
+      visible: showAll ||
+          selectedFilter == _ProfessionalAppointmentsFilter.completed,
+      title: 'Réalisés',
+      subtitle: 'Consultations clôturées comme réalisées',
+      icon: Icons.task_alt_outlined,
+      items: sections.completed,
+      emphasis: _AppointmentCardEmphasis.completed,
+    );
+
+    addSection(
+      visible:
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.noShow,
+      title: 'Absences patients',
+      subtitle: 'Rendez-vous clôturés avec absence patient',
+      icon: Icons.person_off_outlined,
+      items: sections.noShow,
+      emphasis: _AppointmentCardEmphasis.noShow,
     );
 
     addSection(
@@ -460,6 +535,16 @@ class _ProfessionalAppointmentsPageState
       emphasis: _AppointmentCardEmphasis.cancelled,
     );
 
+    addSection(
+      visible:
+          showAll || selectedFilter == _ProfessionalAppointmentsFilter.closed,
+      title: 'Annulés par vous',
+      subtitle: 'Rendez-vous annulés côté professionnel',
+      icon: Icons.event_busy_outlined,
+      items: sections.professionalCancelled,
+      emphasis: _AppointmentCardEmphasis.cancelled,
+    );
+
     return widgets;
   }
 
@@ -476,8 +561,12 @@ class _ProfessionalAppointmentsPageState
         return sections.pending;
       case _ProfessionalAppointmentsFilter.upcoming:
         return sections.upcomingConfirmed;
-      case _ProfessionalAppointmentsFilter.past:
-        return sections.pastConfirmed;
+      case _ProfessionalAppointmentsFilter.toClose:
+        return sections.toClose;
+      case _ProfessionalAppointmentsFilter.completed:
+        return sections.completed;
+      case _ProfessionalAppointmentsFilter.noShow:
+        return sections.noShow;
       case _ProfessionalAppointmentsFilter.closed:
         return sections.closed;
     }
@@ -489,14 +578,20 @@ class _StatsBar extends StatelessWidget {
     required this.totalCount,
     required this.todayCount,
     required this.pendingCount,
-    required this.confirmedCount,
+    required this.upcomingCount,
+    required this.toCloseCount,
+    required this.completedCount,
+    required this.noShowCount,
     required this.closedCount,
   });
 
   final int totalCount;
   final int todayCount;
   final int pendingCount;
-  final int confirmedCount;
+  final int upcomingCount;
+  final int toCloseCount;
+  final int completedCount;
+  final int noShowCount;
   final int closedCount;
 
   @override
@@ -515,8 +610,11 @@ class _StatsBar extends StatelessWidget {
         children: [
           _ChipLabel(label: '$totalCount total'),
           _ChipLabel(label: '$todayCount aujourd’hui'),
-          _ChipLabel(label: '$pendingCount en attente'),
-          _ChipLabel(label: '$confirmedCount à venir'),
+          _ChipLabel(label: '$pendingCount à traiter'),
+          _ChipLabel(label: '$upcomingCount à venir'),
+          _ChipLabel(label: '$toCloseCount à clôturer'),
+          _ChipLabel(label: '$completedCount réalisés'),
+          _ChipLabel(label: '$noShowCount absences'),
           _ChipLabel(label: '$closedCount clos'),
         ],
       ),
@@ -528,20 +626,26 @@ class _SummaryBanner extends StatelessWidget {
   const _SummaryBanner({
     required this.pendingCount,
     required this.todayCount,
+    required this.toCloseCount,
   });
 
   final int pendingCount;
   final int todayCount;
+  final int toCloseCount;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    final text = pendingCount > 0
-        ? 'Vous avez $pendingCount demande(s) à traiter${todayCount > 0 ? ' et $todayCount rendez-vous confirmé(s) aujourd’hui.' : '.'}'
-        : todayCount > 0
-            ? 'Aucune demande en attente. Vous avez $todayCount rendez-vous confirmé(s) aujourd’hui.'
-            : 'Aucune demande en attente pour le moment.';
+    final parts = <String>[
+      if (pendingCount > 0) '$pendingCount demande(s) à traiter',
+      if (todayCount > 0) '$todayCount rendez-vous confirmé(s) aujourd’hui',
+      if (toCloseCount > 0) '$toCloseCount rendez-vous à clôturer',
+    ];
+
+    final text = parts.isEmpty
+        ? 'Aucune action urgente pour le moment.'
+        : 'Priorité : ${parts.join(' • ')}.';
 
     return Card(
       child: Padding(
@@ -570,10 +674,12 @@ class _PrioritySnapshotCard extends StatelessWidget {
   const _PrioritySnapshotCard({
     this.nextPending,
     this.nextToday,
+    this.nextToClose,
   });
 
   final Appointment? nextPending;
   final Appointment? nextToday;
+  final Appointment? nextToClose;
 
   @override
   Widget build(BuildContext context) {
@@ -610,6 +716,18 @@ class _PrioritySnapshotCard extends StatelessWidget {
                       ),
                 ),
               ),
+            if (nextToClose != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: nextPending != null || nextToday != null ? 6 : 0,
+                ),
+                child: Text(
+                  '• Prochain rendez-vous à clôturer : ${nextToClose!.patientFullName} • ${nextToClose!.slot}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: cs.onPrimaryContainer,
+                      ),
+                ),
+              ),
           ],
         ),
       ),
@@ -624,7 +742,9 @@ class _FilterChipsBar extends StatelessWidget {
     required this.todayCount,
     required this.pendingCount,
     required this.upcomingCount,
-    required this.pastCount,
+    required this.toCloseCount,
+    required this.completedCount,
+    required this.noShowCount,
     required this.closedCount,
     required this.onSelected,
   });
@@ -634,7 +754,9 @@ class _FilterChipsBar extends StatelessWidget {
   final int todayCount;
   final int pendingCount;
   final int upcomingCount;
-  final int pastCount;
+  final int toCloseCount;
+  final int completedCount;
+  final int noShowCount;
   final int closedCount;
   final ValueChanged<_ProfessionalAppointmentsFilter> onSelected;
 
@@ -658,7 +780,7 @@ class _FilterChipsBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _FilterChipItem(
-            label: 'En attente ($pendingCount)',
+            label: 'À traiter ($pendingCount)',
             selected: selected == _ProfessionalAppointmentsFilter.pending,
             onTap: () => onSelected(_ProfessionalAppointmentsFilter.pending),
           ),
@@ -670,9 +792,21 @@ class _FilterChipsBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _FilterChipItem(
-            label: 'Passés ($pastCount)',
-            selected: selected == _ProfessionalAppointmentsFilter.past,
-            onTap: () => onSelected(_ProfessionalAppointmentsFilter.past),
+            label: 'À clôturer ($toCloseCount)',
+            selected: selected == _ProfessionalAppointmentsFilter.toClose,
+            onTap: () => onSelected(_ProfessionalAppointmentsFilter.toClose),
+          ),
+          const SizedBox(width: 8),
+          _FilterChipItem(
+            label: 'Réalisés ($completedCount)',
+            selected: selected == _ProfessionalAppointmentsFilter.completed,
+            onTap: () => onSelected(_ProfessionalAppointmentsFilter.completed),
+          ),
+          const SizedBox(width: 8),
+          _FilterChipItem(
+            label: 'Absences ($noShowCount)',
+            selected: selected == _ProfessionalAppointmentsFilter.noShow,
+            onTap: () => onSelected(_ProfessionalAppointmentsFilter.noShow),
           ),
           const SizedBox(width: 8),
           _FilterChipItem(
@@ -776,7 +910,9 @@ enum _AppointmentCardEmphasis {
   today,
   pending,
   upcoming,
-  past,
+  toClose,
+  completed,
+  noShow,
   cancelled,
 }
 
@@ -788,6 +924,58 @@ class _PendingCardActions extends StatelessWidget {
 
   final VoidCallback onConfirm;
   final VoidCallback onRefuse;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TwoActionsRow(
+      primaryLabel: 'Confirmer',
+      primaryIcon: Icons.check_circle_outline,
+      primaryAction: onConfirm,
+      secondaryLabel: 'Refuser',
+      secondaryIcon: Icons.event_busy_outlined,
+      secondaryAction: onRefuse,
+    );
+  }
+}
+
+class _ToCloseCardActions extends StatelessWidget {
+  const _ToCloseCardActions({
+    required this.onComplete,
+    required this.onNoShow,
+  });
+
+  final VoidCallback onComplete;
+  final VoidCallback onNoShow;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TwoActionsRow(
+      primaryLabel: 'Réalisé',
+      primaryIcon: Icons.task_alt_outlined,
+      primaryAction: onComplete,
+      secondaryLabel: 'Absent',
+      secondaryIcon: Icons.person_off_outlined,
+      secondaryAction: onNoShow,
+    );
+  }
+}
+
+class _TwoActionsRow extends StatelessWidget {
+  const _TwoActionsRow({
+    required this.primaryLabel,
+    required this.primaryIcon,
+    required this.primaryAction,
+    required this.secondaryLabel,
+    required this.secondaryIcon,
+    required this.secondaryAction,
+  });
+
+  final String primaryLabel;
+  final IconData primaryIcon;
+  final VoidCallback primaryAction;
+  final String secondaryLabel;
+  final IconData secondaryIcon;
+  final VoidCallback secondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -803,18 +991,18 @@ class _PendingCardActions extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: onConfirm,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Confirmer'),
+                    onPressed: primaryAction,
+                    icon: Icon(primaryIcon),
+                    label: Text(primaryLabel),
                   ),
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: onRefuse,
-                    icon: const Icon(Icons.event_busy_outlined),
-                    label: const Text('Refuser'),
+                    onPressed: secondaryAction,
+                    icon: Icon(secondaryIcon),
+                    label: Text(secondaryLabel),
                   ),
                 ),
               ],
@@ -825,17 +1013,17 @@ class _PendingCardActions extends StatelessWidget {
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: onConfirm,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Confirmer'),
+                  onPressed: primaryAction,
+                  icon: Icon(primaryIcon),
+                  label: Text(primaryLabel),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: onRefuse,
-                  icon: const Icon(Icons.event_busy_outlined),
-                  label: const Text('Refuser'),
+                  onPressed: secondaryAction,
+                  icon: Icon(secondaryIcon),
+                  label: Text(secondaryLabel),
                 ),
               ),
             ],
@@ -959,8 +1147,12 @@ class _EmphasisBadge extends StatelessWidget {
         return const AppointmentMiniBadge(label: 'À traiter');
       case _AppointmentCardEmphasis.upcoming:
         return const AppointmentMiniBadge(label: 'À venir');
-      case _AppointmentCardEmphasis.past:
-        return const AppointmentMiniBadge(label: 'Passé');
+      case _AppointmentCardEmphasis.toClose:
+        return const AppointmentMiniBadge(label: 'À clôturer');
+      case _AppointmentCardEmphasis.completed:
+        return const AppointmentMiniBadge(label: 'Réalisé');
+      case _AppointmentCardEmphasis.noShow:
+        return const AppointmentMiniBadge(label: 'Absence');
       case _AppointmentCardEmphasis.cancelled:
         return const AppointmentMiniBadge(label: 'Clos');
     }
@@ -1020,9 +1212,17 @@ bool _isUpcomingConfirmedAppointment(Appointment appointment) {
       appointment.isUpcoming;
 }
 
-bool _isPastConfirmedAppointment(Appointment appointment) {
+bool _isToCloseAppointment(Appointment appointment) {
   return appointment.status == AppointmentStatus.confirmed &&
-      !appointment.isUpcoming;
+      appointment.isPast;
+}
+
+bool _isCompletedAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.completed;
+}
+
+bool _isNoShowAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.noShow;
 }
 
 bool _isDeclinedAppointment(Appointment appointment) {
@@ -1031,6 +1231,10 @@ bool _isDeclinedAppointment(Appointment appointment) {
 
 bool _isPatientCancelledAppointment(Appointment appointment) {
   return appointment.status == AppointmentStatus.cancelledByPatient;
+}
+
+bool _isProfessionalCancelledAppointment(Appointment appointment) {
+  return appointment.status == AppointmentStatus.cancelledByProfessional;
 }
 
 String _normalizeKey(String value) {

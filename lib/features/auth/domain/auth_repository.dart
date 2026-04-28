@@ -5,8 +5,6 @@ abstract class AuthRepository {
 
   AppUser? get currentUser;
 
-  Future<void> setLoggedIn(bool value);
-
   Future<void> login(AppUser user);
 
   Future<void> register(AppUser user);

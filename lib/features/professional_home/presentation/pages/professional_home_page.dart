@@ -70,8 +70,7 @@ class ProfessionalHomePage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(content: Text(successMessage)),
@@ -115,8 +114,7 @@ class ProfessionalHomePage extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
+    ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
@@ -261,12 +259,12 @@ class ProfessionalHomePage extends ConsumerWidget {
 
                   final nextPending =
                       data.pending.isNotEmpty ? data.pending.first : null;
-                  final nextToday =
-                      data.todayConfirmed.isNotEmpty
-                          ? data.todayConfirmed.first
-                          : null;
+                  final nextToday = data.todayConfirmed.isNotEmpty
+                      ? data.todayConfirmed.first
+                      : null;
 
                   return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _StatsGrid(
                         pendingCount: data.pending.length,
@@ -389,7 +387,8 @@ _ProfessionalHomeData _buildHomeData({
       profile: profile,
       authUser: authUser,
     );
-  }).toList();
+  }).toList()
+    ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
   final pending = professionalItems
       .where((item) => item.status == AppointmentStatus.pending)
@@ -413,9 +412,7 @@ _ProfessionalHomeData _buildHomeData({
       .toList()
     ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-  final closed = professionalItems
-      .where((item) => item.isCancelledLike)
-      .toList()
+  final closed = professionalItems.where((item) => item.isClosed).toList()
     ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
   return _ProfessionalHomeData(
@@ -486,7 +483,7 @@ class _StatsGrid extends StatelessWidget {
       mainAxisSpacing: 12,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.15,
+      childAspectRatio: 1.35,
       children: [
         _StatCard(
           icon: Icons.pending_actions_outlined,
@@ -578,70 +575,76 @@ class _QuickActionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.medical_information_outlined),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Ouvrir la gestion des rendez-vous professionnels',
-                  ),
-                ),
-                FilledButton(
-                  onPressed: onOpenAppointments,
-                  child: const Text('Ouvrir'),
-                ),
-              ],
-            ),
-          ),
+        _ProfessionalHomeActionCard(
+          icon: Icons.medical_information_outlined,
+          label: 'Ouvrir la gestion des rendez-vous professionnels',
+          buttonLabel: 'Ouvrir',
+          isPrimary: true,
+          onPressed: onOpenAppointments,
         ),
         const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.badge_outlined),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Consulter et préparer le profil professionnel',
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: onOpenProfile,
-                  child: const Text('Profil'),
-                ),
-              ],
-            ),
-          ),
+        _ProfessionalHomeActionCard(
+          icon: Icons.badge_outlined,
+          label: 'Consulter et préparer le profil professionnel',
+          buttonLabel: 'Profil',
+          onPressed: onOpenProfile,
         ),
         const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.schedule_outlined),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Configurer les jours et horaires de consultation',
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: onOpenSchedule,
-                  child: const Text('Créneaux'),
-                ),
-              ],
-            ),
-          ),
+        _ProfessionalHomeActionCard(
+          icon: Icons.schedule_outlined,
+          label: 'Configurer les jours et horaires de consultation',
+          buttonLabel: 'Créneaux',
+          onPressed: onOpenSchedule,
         ),
       ],
+    );
+  }
+}
+
+class _ProfessionalHomeActionCard extends StatelessWidget {
+  const _ProfessionalHomeActionCard({
+    required this.icon,
+    required this.label,
+    required this.buttonLabel,
+    required this.onPressed,
+    this.isPrimary = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = isPrimary
+        ? FilledButton(
+            onPressed: onPressed,
+            child: Text(buttonLabel),
+          )
+        : OutlinedButton(
+            onPressed: onPressed,
+            child: Text(buttonLabel),
+          );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label),
+            ),
+            const SizedBox(width: 10),
+            button,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -718,7 +721,7 @@ class _PendingRequestsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'Demandes en attente',
@@ -737,7 +740,7 @@ class _PendingRequestsCard extends StatelessWidget {
                 (item) => Padding(
                   padding: const EdgeInsets.only(bottom: 14),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -758,23 +761,18 @@ class _PendingRequestsCard extends StatelessWidget {
 
                           if (compact) {
                             return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: () => onConfirm(item),
-                                    icon: const Icon(Icons.check_circle_outline),
-                                    label: const Text('Confirmer'),
-                                  ),
+                                FilledButton.icon(
+                                  onPressed: () => onConfirm(item),
+                                  icon: const Icon(Icons.check_circle_outline),
+                                  label: const Text('Confirmer'),
                                 ),
                                 const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () => onRefuse(item),
-                                    icon: const Icon(Icons.event_busy_outlined),
-                                    label: const Text('Refuser'),
-                                  ),
+                                OutlinedButton.icon(
+                                  onPressed: () => onRefuse(item),
+                                  icon: const Icon(Icons.event_busy_outlined),
+                                  label: const Text('Refuser'),
                                 ),
                               ],
                             );
@@ -806,9 +804,12 @@ class _PendingRequestsCard extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: onOpenAll,
-              child: const Text('Voir toutes les demandes'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                onPressed: onOpenAll,
+                child: const Text('Voir toutes les demandes'),
+              ),
             ),
           ],
         ),
@@ -834,7 +835,7 @@ class _TodayAgendaCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'Agenda du jour',
@@ -866,9 +867,12 @@ class _TodayAgendaCard extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: onOpenAll,
-              child: const Text('Voir tout'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                onPressed: onOpenAll,
+                child: const Text('Voir tout'),
+              ),
             ),
           ],
         ),
@@ -898,7 +902,7 @@ class _UpcomingAppointmentsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'À venir',
@@ -931,9 +935,12 @@ class _UpcomingAppointmentsCard extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: onOpenAll,
-              child: const Text('Voir tout'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                onPressed: onOpenAll,
+                child: const Text('Voir tout'),
+              ),
             ),
           ],
         ),
@@ -959,7 +966,7 @@ class _ActivitySummaryCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'Résumé d’activité',

@@ -94,9 +94,7 @@ class HomeDashboardPage extends ConsumerWidget {
                       .toList()
                     ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
-                  final closed = items
-                      .where((a) => a.isCancelledLike)
-                      .toList()
+                  final closed = items.where((a) => a.isClosed).toList()
                     ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
 
                   return Column(
@@ -104,21 +102,24 @@ class HomeDashboardPage extends ConsumerWidget {
                       _NextAppointmentsCard(
                         items: upcomingConfirmed.take(3).toList(),
                         onOpenAll: () {
-                          Navigator.of(context).pushNamed(AppRoutes.appointments);
+                          Navigator.of(context)
+                              .pushNamed(AppRoutes.appointments);
                         },
                       ),
                       const SizedBox(height: 12),
                       _PendingAppointmentsCard(
                         items: pending.take(3).toList(),
                         onOpenAll: () {
-                          Navigator.of(context).pushNamed(AppRoutes.appointments);
+                          Navigator.of(context)
+                              .pushNamed(AppRoutes.appointments);
                         },
                       ),
                       const SizedBox(height: 12),
-                      _CancelledAppointmentsCard(
+                      _ClosedAppointmentsCard(
                         items: closed.take(2).toList(),
                         onOpenAll: () {
-                          Navigator.of(context).pushNamed(AppRoutes.appointments);
+                          Navigator.of(context)
+                              .pushNamed(AppRoutes.appointments);
                         },
                       ),
                     ],
@@ -488,8 +489,8 @@ class _PendingAppointmentsCard extends StatelessWidget {
   }
 }
 
-class _CancelledAppointmentsCard extends StatelessWidget {
-  const _CancelledAppointmentsCard({
+class _ClosedAppointmentsCard extends StatelessWidget {
+  const _ClosedAppointmentsCard({
     required this.items,
     required this.onOpenAll,
   });
@@ -532,11 +533,18 @@ class _CancelledAppointmentsCard extends StatelessWidget {
     switch (appointment.status) {
       case AppointmentStatus.cancelledByPatient:
         return 'Annulé par vous';
+      case AppointmentStatus.cancelledByProfessional:
+        return 'Annulé par le pro';
       case AppointmentStatus.declinedByProfessional:
         return 'Refusé';
+      case AppointmentStatus.completed:
+        return 'Réalisé';
+      case AppointmentStatus.noShow:
+        return 'Absent';
       case AppointmentStatus.pending:
+        return 'En attente';
       case AppointmentStatus.confirmed:
-        return 'Clos';
+        return appointment.isUpcoming ? 'Confirmé' : 'Passé';
     }
   }
 }

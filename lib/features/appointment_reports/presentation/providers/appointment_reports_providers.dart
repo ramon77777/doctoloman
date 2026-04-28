@@ -113,7 +113,7 @@ class AppointmentReportsController {
 
     if (securedAppointment == null) {
       throw StateError(
-        'Enregistrement refusé : rendez-vous introuvable, non terminé, non confirmé ou non autorisé.',
+        'Enregistrement refusé : rendez-vous introuvable, non réalisé ou non autorisé.',
       );
     }
 
@@ -150,7 +150,7 @@ class AppointmentReportsController {
 
     if (securedAppointment == null) {
       throw StateError(
-        'Suppression refusée : rendez-vous introuvable, non terminé, non confirmé ou non autorisé.',
+        'Suppression refusée : rendez-vous introuvable, non réalisé ou non autorisé.',
       );
     }
 
@@ -200,12 +200,9 @@ class AppointmentReportsController {
       return null;
     }
 
-    if (appointment.status != AppointmentStatus.confirmed) {
-      return null;
-    }
-
-    // Défense en profondeur : impossible d'écrire le bilan avant l'heure.
-    if (appointment.isUpcoming) {
+    // Règle métier MVP :
+    // un bilan ne peut être enregistré que pour un rendez-vous marqué comme réalisé.
+    if (appointment.status != AppointmentStatus.completed) {
       return null;
     }
 
@@ -282,11 +279,16 @@ class AppointmentReportsController {
         report.appointmentDateTime.day,
       ),
       createdAt: existingRecord?.createdAt ?? report.createdAt,
+      updatedAt: report.updatedAt,
       patientName: report.patientName,
       sourceLabel: report.professionalName,
       summary: _buildMedicalRecordSummary(report),
       isSensitive: true,
       description: _buildMedicalRecordDescription(report),
+      origin: MedicalRecordOrigin.professionalAppointmentReport,
+      linkedAppointmentId: report.appointmentId,
+      authorProfessionalId: report.professionalId,
+      authorProfessionalName: report.professionalName,
     );
 
     if (existingRecord == null) {

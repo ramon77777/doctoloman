@@ -75,13 +75,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final authState = ref.read(authControllerProvider);
-
-      if (widget.isLoggedIn && !authState.isAuthenticated) {
-        await ref.read(authControllerProvider.notifier).setLoggedIn(true);
-      }
-
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
       final patientProfile = ref.read(patientProfileProvider).valueOrNull;
@@ -89,6 +83,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         profile: patientProfile,
         authUser: ref.read(authControllerProvider).user,
       );
+
       _didInitialPrefill = true;
     });
   }
@@ -159,28 +154,23 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     if (!mounted) return;
 
     final authStateAfter = ref.read(authControllerProvider);
-    if (authStateAfter.isAuthenticated) {
-      await ref.read(patientProfileProvider.future).catchError((_) => null);
-      _prefillFromProfileAndAuth(
-        profile: ref.read(patientProfileProvider).valueOrNull,
-        authUser: authStateAfter.user,
+
+    if (!authStateAfter.isAuthenticated) {
+      _showMessage(
+        ok
+            ? 'Connexion non finalisée. Merci de vous connecter pour envoyer la demande.'
+            : 'Connexion requise pour envoyer la demande.',
       );
       return;
     }
 
-    if (ok) {
-      await ref.read(authControllerProvider.notifier).setLoggedIn(true);
-      await ref.read(patientProfileProvider.future).catchError((_) => null);
-      if (!mounted) return;
+    await ref.read(patientProfileProvider.future).catchError((_) => null);
+    if (!mounted) return;
 
-      _prefillFromProfileAndAuth(
-        profile: ref.read(patientProfileProvider).valueOrNull,
-        authUser: ref.read(authControllerProvider).user,
-      );
-      return;
-    }
-
-    _showMessage('Connexion requise pour envoyer la demande.');
+    _prefillFromProfileAndAuth(
+      profile: ref.read(patientProfileProvider).valueOrNull,
+      authUser: authStateAfter.user,
+    );
   }
 
   void _next() {

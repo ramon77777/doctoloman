@@ -88,20 +88,35 @@ class _ProfessionalAppointmentReportPageState
   }
 
   bool _canWriteReport(Appointment appointment) {
-    return appointment.status == AppointmentStatus.confirmed &&
-        !appointment.isUpcoming;
+    return appointment.status == AppointmentStatus.completed;
   }
 
   String _lockedReportMessage(Appointment appointment) {
-    if (appointment.status != AppointmentStatus.confirmed) {
-      return 'Le bilan n’est accessible qu’après confirmation du rendez-vous.';
-    }
+    switch (appointment.status) {
+      case AppointmentStatus.pending:
+        return 'Le bilan sera accessible après confirmation puis réalisation du rendez-vous.';
 
-    if (appointment.isUpcoming) {
-      return 'Le bilan ne peut être renseigné qu’après la tenue effective du rendez-vous.';
-    }
+      case AppointmentStatus.confirmed:
+        if (appointment.isUpcoming) {
+          return 'Le bilan ne peut être renseigné qu’après la tenue effective du rendez-vous.';
+        }
+        return 'Marquez d’abord ce rendez-vous comme réalisé pour renseigner le bilan.';
 
-    return 'Le bilan n’est pas accessible pour ce rendez-vous.';
+      case AppointmentStatus.completed:
+        return 'Le bilan est disponible pour ce rendez-vous réalisé.';
+
+      case AppointmentStatus.cancelledByPatient:
+        return 'Le bilan n’est pas disponible pour un rendez-vous annulé par le patient.';
+
+      case AppointmentStatus.cancelledByProfessional:
+        return 'Le bilan n’est pas disponible pour un rendez-vous annulé par le professionnel.';
+
+      case AppointmentStatus.declinedByProfessional:
+        return 'Le bilan n’est pas disponible pour une demande refusée.';
+
+      case AppointmentStatus.noShow:
+        return 'Le bilan n’est pas disponible lorsqu’une absence patient a été signalée.';
+    }
   }
 
   void _openPatientMedicalRecord(Appointment appointment) {

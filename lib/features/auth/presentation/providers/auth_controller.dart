@@ -13,8 +13,10 @@ class AuthController extends StateNotifier<AuthState> {
   final AuthRepository _repository;
 
   void _bootstrap() {
-    if (_repository.isLoggedIn && _repository.currentUser != null) {
-      state = AuthState.authenticated(_repository.currentUser!);
+    final user = _repository.currentUser;
+
+    if (_repository.isLoggedIn && user != null) {
+      state = AuthState.authenticated(user);
       return;
     }
 
@@ -32,6 +34,7 @@ class AuthController extends StateNotifier<AuthState> {
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
     final existingUser = await _repository.findByPhone(normalizedPhone);
+
     if (existingUser == null) {
       state = AuthState.unauthenticated();
       throw AuthLoginUserNotFoundException(phone: normalizedPhone);
@@ -66,6 +69,7 @@ class AuthController extends StateNotifier<AuthState> {
     final normalizedPhone = StringNormalizers.normalizePhoneCi(phone);
 
     final existingUser = await _repository.findByPhone(normalizedPhone);
+
     if (existingUser != null) {
       state = AuthState.unauthenticated();
       throw AuthPhoneAlreadyUsedException(
@@ -113,31 +117,11 @@ class AuthController extends StateNotifier<AuthState> {
     state = AuthState.authenticated(updatedUser);
   }
 
-  Future<void> setLoggedIn(bool value) async {
-    if (!value) {
-      await _repository.logout();
-      state = AuthState.unauthenticated();
-      return;
-    }
-
-    state = AuthState.loading(user: state.user);
-
-    await _repository.setLoggedIn(true);
-
-    final user = _repository.currentUser ??
-        const AppUser(
-          id: 'pat-2250000000000',
-          name: 'Utilisateur',
-          phone: '+2250000000000',
-          role: AppUserRole.patient,
-        );
-
-    state = AuthState.authenticated(user);
-  }
-
   Future<void> logout() async {
     state = AuthState.loading(user: state.user);
+
     await _repository.logout();
+
     state = AuthState.unauthenticated();
   }
 

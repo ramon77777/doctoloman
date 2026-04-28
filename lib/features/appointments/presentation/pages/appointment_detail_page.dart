@@ -141,8 +141,14 @@ class AppointmentDetailPage extends ConsumerWidget {
     final message = switch (appointment.status) {
       AppointmentStatus.cancelledByPatient =>
         'Les rappels ne sont pas disponibles pour un rendez-vous annulé par vous.',
+      AppointmentStatus.cancelledByProfessional =>
+        'Les rappels ne sont pas disponibles pour un rendez-vous annulé par le professionnel.',
       AppointmentStatus.declinedByProfessional =>
         'Les rappels ne sont pas disponibles pour une demande refusée par le professionnel.',
+      AppointmentStatus.completed =>
+        'Ce rendez-vous est déjà réalisé. Aucun rappel nécessaire.',
+      AppointmentStatus.noShow =>
+        'Ce rendez-vous a été clôturé avec une absence signalée. Aucun rappel nécessaire.',
       AppointmentStatus.pending =>
         'Votre demande a bien été envoyée. Les rappels seront disponibles après confirmation par le professionnel.',
       AppointmentStatus.confirmed =>

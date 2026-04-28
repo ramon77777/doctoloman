@@ -9,47 +9,53 @@ import '../providers/patient_profile_providers.dart';
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Se déconnecter'),
+            content: const Text(
+              'Voulez-vous vraiment vous déconnecter ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Confirmer'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirm) return;
+
+    await ref.read(authControllerProvider.notifier).logout();
+
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Vous êtes déconnecté.')),
+      );
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.home,
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
     final profileAsync = ref.watch(patientProfileProvider);
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-
-    Future<void> handleLogout() async {
-      final confirm = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Se déconnecter'),
-              content: const Text(
-                'Voulez-vous vraiment vous déconnecter ?',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text('Annuler'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text('Confirmer'),
-                ),
-              ],
-            ),
-          ) ??
-          false;
-
-      if (!confirm) return;
-
-      await ref.read(authControllerProvider.notifier).logout();
-
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vous êtes déconnecté.')),
-      );
-
-      Navigator.of(context).pop();
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -381,7 +387,7 @@ class ProfilePage extends ConsumerWidget {
                   height: 48,
                   child: OutlinedButton.icon(
                     onPressed: authState.isAuthenticated && !authState.isLoading
-                        ? handleLogout
+                        ? () => _handleLogout(context, ref)
                         : null,
                     icon: authState.isLoading
                         ? const SizedBox(
@@ -560,5 +566,3 @@ String _genderLabel(PatientGender? gender) {
       return 'Non renseigné';
   }
 }
-
-

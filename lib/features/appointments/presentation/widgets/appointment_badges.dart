@@ -120,12 +120,27 @@ _BadgeVisualStyle _statusBadgeStyle(
         backgroundColor: scheme.secondaryContainer,
         foregroundColor: scheme.onSecondaryContainer,
       );
+
     case AppointmentStatus.confirmed:
       return _BadgeVisualStyle(
         backgroundColor: scheme.primaryContainer,
         foregroundColor: scheme.onPrimaryContainer,
       );
+
+    case AppointmentStatus.completed:
+      return _BadgeVisualStyle(
+        backgroundColor: Colors.green.withValues(alpha: 0.16),
+        foregroundColor: Colors.green.shade800,
+      );
+
+    case AppointmentStatus.noShow:
+      return _BadgeVisualStyle(
+        backgroundColor: Colors.orange.withValues(alpha: 0.18),
+        foregroundColor: Colors.orange.shade900,
+      );
+
     case AppointmentStatus.cancelledByPatient:
+    case AppointmentStatus.cancelledByProfessional:
     case AppointmentStatus.declinedByProfessional:
       return _BadgeVisualStyle(
         backgroundColor: scheme.errorContainer,

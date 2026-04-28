@@ -2,14 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/router/app_routes.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../providers/professional_profile_providers.dart';
 
 class ProfessionalProfilePage extends ConsumerWidget {
   const ProfessionalProfilePage({super.key});
 
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Se déconnecter'),
+            content: const Text(
+              'Voulez-vous vraiment vous déconnecter de votre espace professionnel ?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Confirmer'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirm) return;
+
+    await ref.read(authControllerProvider.notifier).logout();
+
+    if (!context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Vous êtes déconnecté.')),
+      );
+
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.home,
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(professionalProfileProvider);
+    final authState = ref.watch(authControllerProvider);
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -97,6 +140,22 @@ class ProfessionalProfilePage extends ConsumerWidget {
                               _Badge(
                                 label: profile.city,
                                 icon: Icons.location_on_outlined,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  authState.isLoading
+                                      ? 'Mise à jour...'
+                                      : 'Session active',
+                                  style: textTheme.labelLarge,
+                                ),
                               ),
                             ],
                           ),
@@ -202,6 +261,24 @@ class ProfessionalProfilePage extends ConsumerWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: authState.isLoading
+                    ? null
+                    : () => _handleLogout(context, ref),
+                icon: authState.isLoading
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.logout),
+                label: const Text('Se déconnecter'),
               ),
             ),
           ],

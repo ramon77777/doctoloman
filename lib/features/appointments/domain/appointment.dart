@@ -4,7 +4,10 @@ enum AppointmentStatus {
   pending,
   confirmed,
   cancelledByPatient,
+  cancelledByProfessional,
   declinedByProfessional,
+  completed,
+  noShow,
 }
 
 @immutable
@@ -75,8 +78,7 @@ class Appointment {
   // HELPERS MÉTIER
   // =========================
 
-  String get patientFullName =>
-      '$patientFirstName $patientLastName'.trim();
+  String get patientFullName => '$patientFirstName $patientLastName'.trim();
 
   String get practitionerLocationLabel {
     if (area.isEmpty && city.isEmpty) return 'Localisation non renseignée';
@@ -107,15 +109,58 @@ class Appointment {
   }
 
   bool get isUpcoming => scheduledAt.isAfter(DateTime.now());
+
   bool get isPast => scheduledAt.isBefore(DateTime.now());
+
+  bool get isPending => status == AppointmentStatus.pending;
+
+  bool get isConfirmed => status == AppointmentStatus.confirmed;
+
+  bool get isCompleted => status == AppointmentStatus.completed;
+
+  bool get isNoShow => status == AppointmentStatus.noShow;
+
+  bool get isCancelledByPatient =>
+      status == AppointmentStatus.cancelledByPatient;
+
+  bool get isCancelledByProfessional =>
+      status == AppointmentStatus.cancelledByProfessional;
+
+  bool get isDeclinedByProfessional =>
+      status == AppointmentStatus.declinedByProfessional;
 
   bool get isCancelledLike =>
       status == AppointmentStatus.cancelledByPatient ||
+      status == AppointmentStatus.cancelledByProfessional ||
       status == AppointmentStatus.declinedByProfessional;
+
+  bool get isClosed =>
+      status == AppointmentStatus.cancelledByPatient ||
+      status == AppointmentStatus.cancelledByProfessional ||
+      status == AppointmentStatus.declinedByProfessional ||
+      status == AppointmentStatus.completed ||
+      status == AppointmentStatus.noShow;
 
   bool get isActive =>
       status == AppointmentStatus.pending ||
       status == AppointmentStatus.confirmed;
+
+  bool get canBeConfirmed => status == AppointmentStatus.pending;
+
+  bool get canBeDeclined => status == AppointmentStatus.pending;
+
+  bool get canBeCancelledByPatient =>
+      status == AppointmentStatus.pending ||
+      status == AppointmentStatus.confirmed;
+
+  bool get canBeCancelledByProfessional =>
+      status == AppointmentStatus.confirmed;
+
+  bool get canBeCompleted =>
+      status == AppointmentStatus.confirmed && !isCancelledLike;
+
+  bool get canBeMarkedNoShow =>
+      status == AppointmentStatus.confirmed && !isCancelledLike;
 
   // =========================
   // COPY
@@ -193,16 +238,15 @@ class Appointment {
   factory Appointment.fromMap(Map<String, dynamic> map) {
     return Appointment(
       id: map['id'] ?? '',
-      createdAt: DateTime.tryParse(map['createdAt'] ?? '') ??
-          DateTime.now(),
+      createdAt:
+          DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now(),
       practitionerId: map['practitionerId'] ?? '',
       practitionerName: map['practitionerName'] ?? '',
       specialty: map['specialty'] ?? '',
       address: map['address'] ?? '',
       city: map['city'] ?? '',
       area: map['area'] ?? '',
-      day: DateTime.tryParse(map['day'] ?? '') ??
-          DateTime.now(),
+      day: DateTime.tryParse(map['day'] ?? '') ?? DateTime.now(),
       slot: map['slot'] ?? '',
       reason: map['reason'] ?? '',
       patientFirstName: map['patientFirstName'] ?? '',
@@ -218,14 +262,45 @@ class Appointment {
   }
 
   static AppointmentStatus _statusFromString(String raw) {
-    switch (raw) {
+    final value = raw.trim();
+
+    switch (value) {
       case 'pending':
+      case 'PENDING':
         return AppointmentStatus.pending;
+
+      case 'confirmed':
+      case 'CONFIRMED':
+        return AppointmentStatus.confirmed;
+
       case 'cancelledByPatient':
-      case 'cancelled':
+      case 'CANCELLED_BY_PATIENT':
         return AppointmentStatus.cancelledByPatient;
+
+      case 'cancelledByProfessional':
+      case 'CANCELLED_BY_PROFESSIONAL':
+        return AppointmentStatus.cancelledByProfessional;
+
       case 'declinedByProfessional':
+      case 'DECLINED_BY_PROFESSIONAL':
+      case 'declined':
+      case 'DECLINED':
         return AppointmentStatus.declinedByProfessional;
+
+      case 'completed':
+      case 'done':
+      case 'COMPLETED':
+      case 'DONE':
+        return AppointmentStatus.completed;
+
+      case 'noShow':
+      case 'NO_SHOW':
+        return AppointmentStatus.noShow;
+
+      case 'cancelled':
+      case 'CANCELLED':
+        return AppointmentStatus.cancelledByPatient;
+
       default:
         return AppointmentStatus.confirmed;
     }
