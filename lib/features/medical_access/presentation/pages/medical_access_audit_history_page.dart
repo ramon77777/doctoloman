@@ -65,19 +65,27 @@ class MedicalAccessAuditHistoryPage extends ConsumerWidget {
                     _AuditInfoCard(
                       title: 'Traçabilité des accès',
                       message:
-                          'Cette page liste les consultations effectuées par des professionnels autorisés sur votre dossier médical.',
+                          'Cette page liste les autorisations, révocations et consultations effectuées par des professionnels sur votre dossier médical.',
                     ),
                     SizedBox(height: 24),
                     _AuditMessageCard(
                       icon: Icons.history_toggle_off,
                       title: 'Aucun accès journalisé',
                       message:
-                          'Aucune consultation de votre dossier médical n’a encore été enregistrée dans cette version.',
+                          'Aucune action liée à votre dossier médical n’a encore été enregistrée dans cette version.',
                     ),
                   ],
                 ),
               );
             }
+
+            final grantCount = filtered.where((item) {
+              return item.action == MedicalAccessAuditAction.grantAccess;
+            }).length;
+
+            final revokeCount = filtered.where((item) {
+              return item.action == MedicalAccessAuditAction.revokeAccess;
+            }).length;
 
             final folderOpenCount = filtered.where((item) {
               return item.action ==
@@ -104,11 +112,13 @@ class MedicalAccessAuditHistoryPage extends ConsumerWidget {
                   const _AuditInfoCard(
                     title: 'Traçabilité des accès',
                     message:
-                        'Cette page liste les consultations effectuées par des professionnels autorisés sur votre dossier médical.',
+                        'Cette page liste les autorisations, révocations et consultations effectuées par des professionnels sur votre dossier médical.',
                   ),
                   const SizedBox(height: 14),
                   _AuditSummaryCard(
                     totalCount: filtered.length,
+                    grantCount: grantCount,
+                    revokeCount: revokeCount,
                     folderOpenCount: folderOpenCount,
                     documentOpenCount: documentOpenCount,
                     uniqueProfessionalsCount: uniqueProfessionals,
@@ -185,6 +195,8 @@ class _AuditInfoCard extends StatelessWidget {
 class _AuditSummaryCard extends StatelessWidget {
   const _AuditSummaryCard({
     required this.totalCount,
+    required this.grantCount,
+    required this.revokeCount,
     required this.folderOpenCount,
     required this.documentOpenCount,
     required this.uniqueProfessionalsCount,
@@ -192,6 +204,8 @@ class _AuditSummaryCard extends StatelessWidget {
   });
 
   final int totalCount;
+  final int grantCount;
+  final int revokeCount;
   final int folderOpenCount;
   final int documentOpenCount;
   final int uniqueProfessionalsCount;
@@ -218,7 +232,15 @@ class _AuditSummaryCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _AuditBadge(
-                  label: '$totalCount accès journalisé(s)',
+                  label: '$totalCount action(s) journalisée(s)',
+                  colorScheme: cs,
+                ),
+                _AuditBadge(
+                  label: '$grantCount autorisation(s)',
+                  colorScheme: cs,
+                ),
+                _AuditBadge(
+                  label: '$revokeCount révocation(s)',
                   colorScheme: cs,
                 ),
                 _AuditBadge(
@@ -234,14 +256,14 @@ class _AuditSummaryCard extends StatelessWidget {
                   colorScheme: cs,
                 ),
                 _AuditBadge(
-                  label: 'Dernier accès : ${_formatDateTime(latestAccessAt)}',
+                  label: 'Dernière action : ${_formatDateTime(latestAccessAt)}',
                   colorScheme: cs,
                 ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
-              'Chaque consultation enregistrée ici contribue à la traçabilité du dossier médical du patient.',
+              'Chaque action enregistrée ici contribue à la traçabilité du dossier médical du patient.',
               style: textTheme.bodyMedium?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
@@ -331,6 +353,10 @@ class _AuditItemCard extends StatelessWidget {
 
   String _titleFor(MedicalAccessAudit audit) {
     switch (audit.action) {
+      case MedicalAccessAuditAction.grantAccess:
+        return 'Autorisation accordée';
+      case MedicalAccessAuditAction.revokeAccess:
+        return 'Autorisation révoquée';
       case MedicalAccessAuditAction.openPatientMedicalRecords:
         return 'Consultation du dossier médical';
       case MedicalAccessAuditAction.openMedicalRecord:
@@ -340,6 +366,10 @@ class _AuditItemCard extends StatelessWidget {
 
   String _subtitleFor(MedicalAccessAudit audit) {
     switch (audit.action) {
+      case MedicalAccessAuditAction.grantAccess:
+        return 'Vous avez autorisé ${audit.professionalName} à consulter votre dossier médical.';
+      case MedicalAccessAuditAction.revokeAccess:
+        return 'Vous avez révoqué l’accès de ${audit.professionalName} à votre dossier médical.';
       case MedicalAccessAuditAction.openPatientMedicalRecords:
         return '${audit.professionalName} a ouvert votre dossier médical.';
       case MedicalAccessAuditAction.openMedicalRecord:
@@ -353,6 +383,10 @@ class _AuditItemCard extends StatelessWidget {
 
   IconData _iconFor(MedicalAccessAuditAction action) {
     switch (action) {
+      case MedicalAccessAuditAction.grantAccess:
+        return Icons.lock_open_outlined;
+      case MedicalAccessAuditAction.revokeAccess:
+        return Icons.lock_outline;
       case MedicalAccessAuditAction.openPatientMedicalRecords:
         return Icons.folder_shared_outlined;
       case MedicalAccessAuditAction.openMedicalRecord:

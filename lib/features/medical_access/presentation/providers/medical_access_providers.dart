@@ -9,6 +9,7 @@ import '../../data/in_memory_medical_access_repository.dart';
 import '../../data/medical_access_local_storage.dart';
 import '../../domain/medical_access.dart';
 import '../../domain/medical_access_repository.dart';
+import 'medical_access_audit_providers.dart';
 
 final medicalAccessLocalStorageProvider = Provider<MedicalAccessLocalStorage>(
   (ref) => MedicalAccessLocalStorage(
@@ -172,7 +173,9 @@ final hasMedicalAccessProvider =
 
       return items.any((item) {
         return item.isActive &&
-            patientCandidates.contains(_normalizePatientCandidate(item.patientId)) &&
+            patientCandidates.contains(
+              _normalizePatientCandidate(item.patientId),
+            ) &&
             professionalKeys.contains(_normalizeTextKey(item.professionalId));
       });
     },
@@ -276,8 +279,10 @@ class MedicalAccessController {
     final match = existing.cast<MedicalAccess?>().firstWhere(
           (item) =>
               item != null &&
-              _normalizePatientCandidate(item.patientId) == normalizedPatientId &&
-              _normalizeTextKey(item.professionalId) == normalizedProfessionalId,
+              _normalizePatientCandidate(item.patientId) ==
+                  normalizedPatientId &&
+              _normalizeTextKey(item.professionalId) ==
+                  normalizedProfessionalId,
           orElse: () => null,
         );
 
@@ -289,21 +294,30 @@ class MedicalAccessController {
             patientId: normalizedPatientId,
             patientName: _fallbackName(patientName, 'Patient'),
             professionalId: normalizedProfessionalId,
-            professionalName:
-                _fallbackName(professionalName, 'Professionnel'),
+            professionalName: _fallbackName(
+              professionalName,
+              'Professionnel',
+            ),
             grantedAt: now,
           )
         : match.copyWith(
             patientId: normalizedPatientId,
             patientName: _fallbackName(patientName, match.patientName),
             professionalId: normalizedProfessionalId,
-            professionalName:
-                _fallbackName(professionalName, match.professionalName),
+            professionalName: _fallbackName(
+              professionalName,
+              match.professionalName,
+            ),
             grantedAt: now,
             clearRevokedAt: true,
           );
 
     await _repo.upsert(access);
+
+    await _ref.read(medicalAccessAuditControllerProvider).logGrantAccess(
+          access: access,
+        );
+
     _invalidateCollections();
   }
 
@@ -330,6 +344,11 @@ class MedicalAccessController {
     }
 
     await _repo.revokeById(normalizedId);
+
+    await _ref.read(medicalAccessAuditControllerProvider).logRevokeAccess(
+          access: existing,
+        );
+
     _invalidateCollections();
   }
 
@@ -354,6 +373,10 @@ class MedicalAccessController {
     for (final item in mine) {
       if (item.isActive) {
         await _repo.revokeById(item.id);
+
+        await _ref.read(medicalAccessAuditControllerProvider).logRevokeAccess(
+              access: item,
+            );
       }
     }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 enum MedicalAccessAuditAction {
+  grantAccess,
+  revokeAccess,
   openPatientMedicalRecords,
   openMedicalRecord,
 }
@@ -101,6 +103,10 @@ class MedicalAccessAudit {
 
   static MedicalAccessAuditAction _actionFromString(String? raw) {
     switch (raw) {
+      case 'grantAccess':
+        return MedicalAccessAuditAction.grantAccess;
+      case 'revokeAccess':
+        return MedicalAccessAuditAction.revokeAccess;
       case 'openMedicalRecord':
         return MedicalAccessAuditAction.openMedicalRecord;
       case 'openPatientMedicalRecords':

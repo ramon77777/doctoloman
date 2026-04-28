@@ -113,6 +113,60 @@ class MedicalAccessAuditController {
   final Ref _ref;
   final MedicalAccessAuditRepository _repo;
 
+  Future<void> logGrantAccess({
+    required MedicalAccess access,
+  }) async {
+    final normalizedPatientId = _normalizePatientId(access.patientId);
+    final normalizedProfessionalId = _normalizeGenericId(access.professionalId);
+
+    if (normalizedPatientId.isEmpty || normalizedProfessionalId.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+
+    final audit = MedicalAccessAudit(
+      id: 'maa_${now.microsecondsSinceEpoch}',
+      action: MedicalAccessAuditAction.grantAccess,
+      patientId: normalizedPatientId,
+      patientName: _fallbackName(access.patientName, 'Patient'),
+      professionalId: normalizedProfessionalId,
+      professionalName: _fallbackName(access.professionalName, 'Professionnel'),
+      createdAt: now,
+      medicalAccessId: access.id,
+    );
+
+    await _repo.create(audit);
+    _invalidateCollections();
+  }
+
+  Future<void> logRevokeAccess({
+    required MedicalAccess access,
+  }) async {
+    final normalizedPatientId = _normalizePatientId(access.patientId);
+    final normalizedProfessionalId = _normalizeGenericId(access.professionalId);
+
+    if (normalizedPatientId.isEmpty || normalizedProfessionalId.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+
+    final audit = MedicalAccessAudit(
+      id: 'maa_${now.microsecondsSinceEpoch}',
+      action: MedicalAccessAuditAction.revokeAccess,
+      patientId: normalizedPatientId,
+      patientName: _fallbackName(access.patientName, 'Patient'),
+      professionalId: normalizedProfessionalId,
+      professionalName: _fallbackName(access.professionalName, 'Professionnel'),
+      createdAt: now,
+      medicalAccessId: access.id,
+    );
+
+    await _repo.create(audit);
+    _invalidateCollections();
+  }
+
   Future<void> logOpenPatientMedicalRecords({
     required String patientId,
     required String patientName,
