@@ -95,3 +95,21 @@ class ProfessionalAppointmentReportArgs {
 
   final String appointmentId;
 }
+
+@immutable
+class TeleconsultationDetailArgs {
+  const TeleconsultationDetailArgs({
+    required this.sessionId,
+  });
+
+  final String sessionId;
+}
+
+@immutable
+class TeleconsultationRoomArgs {
+  const TeleconsultationRoomArgs({
+    required this.sessionId,
+  });
+
+  final String sessionId;
+}

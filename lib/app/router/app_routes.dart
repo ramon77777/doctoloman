@@ -14,6 +14,7 @@ import '../../features/professional_home/presentation/pages/professional_home_pa
 import '../../features/professional_profile/presentation/pages/professional_profile_edit_page.dart';
 import '../../features/professional_profile/presentation/pages/professional_profile_page.dart';
 import '../../features/professional_schedule/presentation/pages/professional_schedule_page.dart';
+import '../../features/teleconsultation/presentation/pages/teleconsultations_page.dart';
 import 'route_guards.dart';
 
 class AppRoutes {
@@ -31,6 +32,10 @@ class AppRoutes {
 
   static const appointments = '/appointments';
   static const appointmentDetail = '/appointments/detail';
+
+  static const teleconsultations = '/teleconsultations';
+  static const teleconsultationDetail = '/teleconsultations/detail';
+  static const teleconsultationRoom = '/teleconsultations/room';
 
   static const medicalRecords = '/medical-records';
   static const medicalRecordDetail = '/medical-records/detail';
@@ -50,6 +55,8 @@ class AppRoutes {
       '/professional/appointments/detail';
   static const professionalAppointmentReport =
       '/professional/appointments/report';
+  static const professionalTeleconsultations =
+      '/professional/teleconsultations';
   static const professionalProfile = '/professional/profile';
   static const professionalSchedule = '/professional/schedule';
   static const professionalProfileEdit = '/professional/profile/edit';
@@ -68,6 +75,10 @@ class AppRoutes {
       appointments: (_) => const RouteGuard(
             access: AppRouteAccess.patientOnly,
             child: AppointmentsPage(),
+          ),
+      teleconsultations: (_) => const RouteGuard(
+            access: AppRouteAccess.public,
+            child: TeleconsultationsPage(),
           ),
       profile: (_) => const RouteGuard(
             access: AppRouteAccess.patientOnly,
@@ -96,6 +107,10 @@ class AppRoutes {
       professionalAppointments: (_) => const RouteGuard(
             access: AppRouteAccess.professionalOnly,
             child: ProfessionalAppointmentsPage(),
+          ),
+      professionalTeleconsultations: (_) => const RouteGuard(
+            access: AppRouteAccess.professionalOnly,
+            child: TeleconsultationsPage(),
           ),
       professionalAuthorizedPatients: (_) => const RouteGuard(
             access: AppRouteAccess.professionalOnly,

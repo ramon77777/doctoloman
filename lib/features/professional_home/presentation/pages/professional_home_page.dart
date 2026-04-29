@@ -155,6 +155,16 @@ class ProfessionalHomePage extends ConsumerWidget {
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.video_call_outlined),
+                  title: const Text('Téléconsultations'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).pushNamed(
+                      AppRoutes.teleconsultations,
+                    );
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.logout),
                   title: const Text('Se déconnecter'),
                   onTap: () async {
@@ -279,6 +289,11 @@ class ProfessionalHomePage extends ConsumerWidget {
                             AppRoutes.professionalAppointments,
                           );
                         },
+                        onOpenTeleconsultations: () {
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.teleconsultations,
+                          );
+                        },
                         onOpenProfile: () {
                           Navigator.of(context).pushNamed(
                             AppRoutes.professionalProfile,
@@ -319,8 +334,7 @@ class ProfessionalHomePage extends ConsumerWidget {
                           context,
                           ref,
                           appointment: appointment,
-                          newStatus:
-                              AppointmentStatus.declinedByProfessional,
+                          newStatus: AppointmentStatus.declinedByProfessional,
                           title: 'Refuser la demande',
                           message:
                               'Souhaitez-vous refuser cette demande pour ${appointment.patientFullName} ?',
@@ -564,11 +578,13 @@ class _StatCard extends StatelessWidget {
 class _QuickActionsCard extends StatelessWidget {
   const _QuickActionsCard({
     required this.onOpenAppointments,
+    required this.onOpenTeleconsultations,
     required this.onOpenProfile,
     required this.onOpenSchedule,
   });
 
   final VoidCallback onOpenAppointments;
+  final VoidCallback onOpenTeleconsultations;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenSchedule;
 
@@ -583,6 +599,13 @@ class _QuickActionsCard extends StatelessWidget {
           buttonLabel: 'Ouvrir',
           isPrimary: true,
           onPressed: onOpenAppointments,
+        ),
+        const SizedBox(height: 12),
+        _ProfessionalHomeActionCard(
+          icon: Icons.video_call_outlined,
+          label: 'Consulter et gérer les téléconsultations',
+          buttonLabel: 'Visio',
+          onPressed: onOpenTeleconsultations,
         ),
         const SizedBox(height: 12),
         _ProfessionalHomeActionCard(

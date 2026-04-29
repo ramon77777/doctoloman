@@ -505,17 +505,6 @@ class _HomePublicPageState extends ConsumerState<HomePublicPage> {
                       onTap: _openOnDutyPharmacies,
                     ),
                     const SizedBox(height: 12),
-                    _QuickActionCard(
-                      icon: Icons.video_call_outlined,
-                      title: 'Téléconsultation',
-                      subtitle: isAuthenticated
-                          ? 'Consultation à distance bientôt disponible'
-                          : 'Consultation à distance (connexion requise)',
-                      enabled: canTapQuickActions,
-                      onTap: () {
-                        _showMessage('Téléconsultation bientôt disponible.');
-                      },
-                    ),
                     const SizedBox(height: 20),
                     Card(
                       child: Padding(

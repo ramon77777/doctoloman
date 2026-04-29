@@ -198,6 +198,9 @@ class HomeDashboardPage extends ConsumerWidget {
                 onAppointments: () {
                   Navigator.of(context).pushNamed(AppRoutes.appointments);
                 },
+                onTeleconsultations: () {
+                  Navigator.of(context).pushNamed(AppRoutes.teleconsultations);
+                },
                 onOnDutyPharmacies: () {
                   Navigator.of(context).pushNamed(AppRoutes.pharmaciesOnDuty);
                 },
@@ -622,6 +625,7 @@ class _QuickActionsGrid extends StatelessWidget {
   const _QuickActionsGrid({
     required this.onSearchDoctors,
     required this.onAppointments,
+    required this.onTeleconsultations,
     required this.onOnDutyPharmacies,
     required this.onMedicalRecords,
     required this.onProfile,
@@ -629,6 +633,7 @@ class _QuickActionsGrid extends StatelessWidget {
 
   final VoidCallback onSearchDoctors;
   final VoidCallback onAppointments;
+  final VoidCallback onTeleconsultations;
   final VoidCallback onOnDutyPharmacies;
   final VoidCallback onMedicalRecords;
   final VoidCallback onProfile;
@@ -662,6 +667,12 @@ class _QuickActionsGrid extends StatelessWidget {
               title: 'Rendez-vous',
               subtitle: 'Voir mes rendez-vous',
               onTap: onAppointments,
+            ),
+            _DashboardActionCard(
+              icon: Icons.video_call_outlined,
+              title: 'Téléconsultation',
+              subtitle: 'Voir mes consultations en ligne',
+              onTap: onTeleconsultations,
             ),
             _DashboardActionCard(
               icon: Icons.local_pharmacy_outlined,

@@ -10,6 +10,8 @@ import '../../../appointment_reports/presentation/providers/appointment_reports_
 import '../../../professional_schedule/domain/professional_schedule.dart';
 import '../../../professional_schedule/domain/slot_generation.dart';
 import '../../../professional_schedule/presentation/providers/professional_schedule_providers.dart';
+import '../../../teleconsultation/domain/teleconsultation_session.dart';
+import '../../../teleconsultation/presentation/providers/teleconsultation_providers.dart';
 import '../../domain/appointment.dart';
 import '../../domain/appointments_repository.dart';
 import '../helpers/appointment_ui_helpers.dart';
@@ -137,6 +139,49 @@ class AppointmentDetailPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _prepareTeleconsultation(
+    BuildContext context,
+    WidgetRef ref,
+    Appointment appointment,
+  ) async {
+    try {
+      final session = await ref
+          .read(teleconsultationControllerProvider)
+          .ensureForAppointment(
+            appointmentId: appointment.id,
+          );
+
+      if (!context.mounted) return;
+
+      Navigator.of(context).pushNamed(
+        AppRoutes.teleconsultationDetail,
+        arguments: TeleconsultationDetailArgs(sessionId: session.id),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Impossible de préparer la téléconsultation pour ce rendez-vous.',
+            ),
+          ),
+        );
+    }
+  }
+
+  void _openTeleconsultationDetail(
+    BuildContext context,
+    TeleconsultationSession session,
+  ) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.teleconsultationDetail,
+      arguments: TeleconsultationDetailArgs(sessionId: session.id),
+    );
+  }
+
   void _showReminderInfo(BuildContext context, Appointment appointment) {
     final message = switch (appointment.status) {
       AppointmentStatus.cancelledByPatient =>
@@ -185,6 +230,10 @@ class AppointmentDetailPage extends ConsumerWidget {
               appointmentReportByAppointmentIdProvider(appointment.id),
             );
 
+            final teleconsultationAsync = ref.watch(
+              teleconsultationByAppointmentIdProvider(appointment.id),
+            );
+
             final canCancel = AppointmentUiHelpers.canPatientCancel(appointment);
             final canReschedule =
                 AppointmentUiHelpers.canPatientReschedule(appointment);
@@ -199,6 +248,40 @@ class AppointmentDetailPage extends ConsumerWidget {
                 _ReminderCard(
                   appointment: appointment,
                   onTap: () => _showReminderInfo(context, appointment),
+                ),
+                const SizedBox(height: 14),
+                teleconsultationAsync.when(
+                  loading: () => const _TeleconsultationLoadingCard(),
+                  error: (_, _) => _TeleconsultationAccessCard(
+                    appointment: appointment,
+                    session: null,
+                    hasLoadingError: true,
+                    onPrepare: appointment.status == AppointmentStatus.confirmed
+                        ? () => _prepareTeleconsultation(
+                              context,
+                              ref,
+                              appointment,
+                            )
+                        : null,
+                    onOpen: null,
+                  ),
+                  data: (session) => _TeleconsultationAccessCard(
+                    appointment: appointment,
+                    session: session,
+                    onPrepare: appointment.status == AppointmentStatus.confirmed
+                        ? () => _prepareTeleconsultation(
+                              context,
+                              ref,
+                              appointment,
+                            )
+                        : null,
+                    onOpen: session == null
+                        ? null
+                        : () => _openTeleconsultationDetail(
+                              context,
+                              session,
+                            ),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 _ActionAvailabilityCard(
@@ -372,6 +455,214 @@ class AppointmentDetailPage extends ConsumerWidget {
   }
 }
 
+class _TeleconsultationLoadingCard extends StatelessWidget {
+  const _TeleconsultationLoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(14),
+        child: Row(
+          children: [
+            SizedBox(
+              height: 18,
+              width: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('Chargement de la téléconsultation...'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeleconsultationAccessCard extends StatelessWidget {
+  const _TeleconsultationAccessCard({
+    required this.appointment,
+    required this.session,
+    required this.onPrepare,
+    required this.onOpen,
+    this.hasLoadingError = false,
+  });
+
+  final Appointment appointment;
+  final TeleconsultationSession? session;
+  final VoidCallback? onPrepare;
+  final VoidCallback? onOpen;
+  final bool hasLoadingError;
+
+  bool get _canPrepare {
+    return appointment.status == AppointmentStatus.confirmed && session == null;
+  }
+
+  bool get _hasSession => session != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final title = hasLoadingError
+        ? 'Téléconsultation indisponible'
+        : _hasSession
+            ? 'Téléconsultation associée'
+            : _canPrepare
+                ? 'Téléconsultation disponible'
+                : 'Téléconsultation non disponible';
+
+    final message = hasLoadingError
+        ? 'Impossible de charger les informations de téléconsultation pour le moment.'
+        : _buildMessage();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.video_call_outlined, color: cs.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                  ),
+                  if (_hasSession) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _TeleconsultationBadge(
+                          label: _teleconsultationStatusLabel(session!.status),
+                        ),
+                        _TeleconsultationBadge(
+                          label: session!.consentAccepted
+                              ? 'Consentement accepté'
+                              : 'Consentement requis',
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (_canPrepare || _hasSession) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _hasSession
+                          ? FilledButton.icon(
+                              onPressed: onOpen,
+                              icon: const Icon(Icons.open_in_new_outlined),
+                              label: const Text('Ouvrir la téléconsultation'),
+                            )
+                          : FilledButton.icon(
+                              onPressed: onPrepare,
+                              icon: const Icon(Icons.video_call_outlined),
+                              label: const Text('Préparer la téléconsultation'),
+                            ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _buildMessage() {
+    final currentSession = session;
+
+    if (currentSession != null) {
+      if (currentSession.isClosed) {
+        return 'Cette téléconsultation est clôturée. Vous pouvez consulter son détail.';
+      }
+
+      if (!currentSession.consentAccepted) {
+        return 'Une session de téléconsultation est prête. Le consentement doit être accepté avant l’accès à la salle.';
+      }
+
+      return 'Une session de téléconsultation est prête pour ce rendez-vous.';
+    }
+
+    switch (appointment.status) {
+      case AppointmentStatus.confirmed:
+        return appointment.isUpcoming
+            ? 'Ce rendez-vous confirmé peut être préparé en téléconsultation.'
+            : 'Ce rendez-vous confirmé est passé. La téléconsultation ne peut plus être préparée depuis cette page.';
+      case AppointmentStatus.pending:
+        return 'La téléconsultation sera disponible après confirmation du rendez-vous par le professionnel.';
+      case AppointmentStatus.completed:
+        return 'Ce rendez-vous est déjà réalisé. La téléconsultation ne peut plus être préparée.';
+      case AppointmentStatus.cancelledByPatient:
+        return 'La téléconsultation n’est pas disponible pour un rendez-vous annulé par vous.';
+      case AppointmentStatus.cancelledByProfessional:
+        return 'La téléconsultation n’est pas disponible pour un rendez-vous annulé par le professionnel.';
+      case AppointmentStatus.declinedByProfessional:
+        return 'La téléconsultation n’est pas disponible pour une demande refusée.';
+      case AppointmentStatus.noShow:
+        return 'La téléconsultation n’est pas disponible pour un rendez-vous clôturé avec absence.';
+    }
+  }
+
+  String _teleconsultationStatusLabel(TeleconsultationStatus status) {
+    switch (status) {
+      case TeleconsultationStatus.scheduled:
+        return 'Programmée';
+      case TeleconsultationStatus.waiting:
+        return 'En attente';
+      case TeleconsultationStatus.inProgress:
+        return 'En cours';
+      case TeleconsultationStatus.completed:
+        return 'Terminée';
+      case TeleconsultationStatus.cancelled:
+        return 'Annulée';
+    }
+  }
+}
+
+class _TeleconsultationBadge extends StatelessWidget {
+  const _TeleconsultationBadge({
+    required this.label,
+  });
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: cs.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionSummaryCard extends StatelessWidget {
   const _ActionSummaryCard({
     required this.appointment,
@@ -519,7 +810,9 @@ class _PatientAppointmentReportSection extends StatelessWidget {
     }
 
     if (appointment.status == AppointmentStatus.declinedByProfessional ||
-        appointment.status == AppointmentStatus.cancelledByPatient) {
+        appointment.status == AppointmentStatus.cancelledByPatient ||
+        appointment.status == AppointmentStatus.cancelledByProfessional ||
+        appointment.status == AppointmentStatus.noShow) {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(16),
@@ -527,7 +820,7 @@ class _PatientAppointmentReportSection extends StatelessWidget {
             icon: Icons.event_busy_outlined,
             title: 'Compte rendu indisponible',
             message:
-                'Aucun compte rendu n’est disponible pour une demande refusée ou un rendez-vous annulé.',
+                'Aucun compte rendu n’est disponible pour une demande refusée, un rendez-vous annulé ou une absence signalée.',
           ),
         ),
       );

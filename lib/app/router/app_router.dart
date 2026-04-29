@@ -19,6 +19,9 @@ import '../../features/professional_appointments/presentation/pages/professional
 import '../../features/professional_appointments/presentation/pages/professional_appointments_page.dart';
 import '../../features/search/presentation/pages/practitioner_detail_page.dart';
 import '../../features/search/presentation/pages/search_results_page.dart';
+import '../../features/teleconsultation/presentation/pages/teleconsultation_detail_page.dart';
+import '../../features/teleconsultation/presentation/pages/teleconsultation_room_page.dart';
+import '../../features/teleconsultation/presentation/pages/teleconsultations_page.dart';
 import 'app_routes.dart';
 import 'route_args.dart';
 import 'route_guards.dart';
@@ -36,6 +39,10 @@ class AppRouter {
         return _buildPharmacyDetailRoute(settings);
       case AppRoutes.appointmentDetail:
         return _buildAppointmentDetailRoute(settings);
+      case AppRoutes.teleconsultationDetail:
+        return _buildTeleconsultationDetailRoute(settings);
+      case AppRoutes.teleconsultationRoom:
+        return _buildTeleconsultationRoomRoute(settings);
       case AppRoutes.medicalRecordDetail:
         return _buildMedicalRecordDetailRoute(settings);
       case AppRoutes.medicalRecordEdit:
@@ -155,6 +162,56 @@ class AppRouter {
         access: AppRouteAccess.patientOnly,
         child: patient_appointment_page.AppointmentDetailPage(
           appointmentId: args.appointmentId,
+        ),
+      ),
+      settings: settings,
+    );
+  }
+
+  static Route<dynamic> _buildTeleconsultationDetailRoute(
+    RouteSettings settings,
+  ) {
+    final args = settings.arguments;
+    if (args is! TeleconsultationDetailArgs) {
+      return fadeRoute(
+        const RouteGuard(
+          access: AppRouteAccess.public,
+          child: TeleconsultationsPage(),
+        ),
+        settings: settings,
+      );
+    }
+
+    return fadeRoute(
+      RouteGuard(
+        access: AppRouteAccess.public,
+        child: TeleconsultationDetailPage(
+          sessionId: args.sessionId,
+        ),
+      ),
+      settings: settings,
+    );
+  }
+
+  static Route<dynamic> _buildTeleconsultationRoomRoute(
+    RouteSettings settings,
+  ) {
+    final args = settings.arguments;
+    if (args is! TeleconsultationRoomArgs) {
+      return fadeRoute(
+        const RouteGuard(
+          access: AppRouteAccess.public,
+          child: TeleconsultationsPage(),
+        ),
+        settings: settings,
+      );
+    }
+
+    return fadeRoute(
+      RouteGuard(
+        access: AppRouteAccess.public,
+        child: TeleconsultationRoomPage(
+          sessionId: args.sessionId,
         ),
       ),
       settings: settings,
