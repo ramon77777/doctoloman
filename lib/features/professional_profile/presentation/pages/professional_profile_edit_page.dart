@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/professional_profile.dart';
 import '../providers/professional_profile_providers.dart';
 
 class ProfessionalProfileEditPage extends ConsumerStatefulWidget {
@@ -29,6 +30,12 @@ class _ProfessionalProfileEditPageState
   bool _isVerified = false;
   bool _isSaving = false;
   bool _initialized = false;
+
+  int _appointmentDurationMinutes =
+      ProfessionalProfile.defaultAppointmentDurationMinutes;
+
+  List<AppointmentReasonOption> _appointmentReasons =
+      ProfessionalProfile.defaultAppointmentReasons;
 
   List<TextEditingController> get _allControllers => [
         _displayNameCtrl,
@@ -62,6 +69,12 @@ class _ProfessionalProfileEditPageState
     _consultationFeeCtrl.text = profile.consultationFeeLabel;
     _languagesCtrl.text = profile.languages.join(', ');
     _isVerified = profile.isVerified;
+    _appointmentDurationMinutes = profile.appointmentDurationMinutes;
+    _appointmentReasons = List<AppointmentReasonOption>.from(
+      profile.appointmentReasons.isEmpty
+          ? ProfessionalProfile.defaultAppointmentReasons
+          : profile.appointmentReasons,
+    );
 
     for (final controller in _allControllers) {
       controller.addListener(_onFormChanged);
@@ -160,6 +173,11 @@ class _ProfessionalProfileEditPageState
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid || _isSaving) return;
 
+    if (_appointmentReasons.isEmpty) {
+      _showMessage('Ajoutez au moins un motif de rendez-vous.');
+      return;
+    }
+
     FocusScope.of(context).unfocus();
     setState(() => _isSaving = true);
 
@@ -178,6 +196,8 @@ class _ProfessionalProfileEditPageState
         languages: _parseLanguages(_languagesCtrl.text),
         consultationFeeLabel: _cleanText(_consultationFeeCtrl.text),
         isVerified: _isVerified,
+        appointmentDurationMinutes: _appointmentDurationMinutes,
+        appointmentReasons: _appointmentReasons,
       );
 
       if (!mounted) return;
@@ -206,6 +226,76 @@ class _ProfessionalProfileEditPageState
 
     if (!mounted) return;
     setState(() => _isSaving = false);
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openReasonEditor({
+    int? index,
+    AppointmentReasonOption? initialReason,
+  }) async {
+    final result = await showDialog<AppointmentReasonOption>(
+      context: context,
+      builder: (dialogContext) => _AppointmentReasonDialog(
+        initialReason: initialReason,
+      ),
+    );
+
+    if (result == null) return;
+
+    final normalizedLabel = _cleanText(result.label);
+    if (normalizedLabel.isEmpty) {
+      _showMessage('Le libellé du motif est requis.');
+      return;
+    }
+
+    final alreadyExists = _appointmentReasons.asMap().entries.any((entry) {
+      if (index != null && entry.key == index) return false;
+      return entry.value.label.toLowerCase() == normalizedLabel.toLowerCase();
+    });
+
+    if (alreadyExists) {
+      _showMessage('Ce motif existe déjà.');
+      return;
+    }
+
+    setState(() {
+      if (index == null) {
+        _appointmentReasons = [
+          ..._appointmentReasons,
+          result,
+        ];
+      } else {
+        final next = [..._appointmentReasons];
+        next[index] = result;
+        _appointmentReasons = next;
+      }
+    });
+  }
+
+  void _removeReason(int index) {
+    if (_appointmentReasons.length <= 1) {
+      _showMessage('Gardez au moins un motif de rendez-vous.');
+      return;
+    }
+
+    setState(() {
+      final next = [..._appointmentReasons]..removeAt(index);
+      _appointmentReasons = next;
+    });
+  }
+
+  void _resetReasons() {
+    setState(() {
+      _appointmentReasons = ProfessionalProfile.defaultAppointmentReasons;
+    });
+    _showMessage('Motifs réinitialisés.');
   }
 
   @override
@@ -382,6 +472,44 @@ class _ProfessionalProfileEditPageState
                     validator: _consultationFeeValidator,
                   ),
                   const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    initialValue: _appointmentDurationMinutes,
+                    decoration: const InputDecoration(
+                      labelText: 'Durée par défaut des rendez-vous',
+                      prefixIcon: Icon(Icons.timer_outlined),
+                    ),
+                    items: ProfessionalProfile.allowedAppointmentDurations
+                        .map(
+                          (duration) => DropdownMenuItem<int>(
+                            value: duration,
+                            child: Text('$duration min'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _appointmentDurationMinutes = value);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Cette durée reste la valeur de secours. Les motifs ci-dessous contrôlent maintenant les durées affichées côté patient.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _ReasonsEditorCard(
+                    reasons: _appointmentReasons,
+                    onAdd: () => _openReasonEditor(),
+                    onEdit: (index, reason) => _openReasonEditor(
+                      index: index,
+                      initialReason: reason,
+                    ),
+                    onRemove: _removeReason,
+                    onReset: _resetReasons,
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _languagesCtrl,
                     textInputAction: TextInputAction.done,
@@ -459,6 +587,19 @@ class _ProfessionalProfileEditPageState
                             : _cleanText(_consultationFeeCtrl.text),
                       ),
                       _PreviewLine(
+                        label: 'Durée RDV',
+                        value: '$_appointmentDurationMinutes min',
+                      ),
+                      _PreviewLine(
+                        label: 'Motifs',
+                        value: _appointmentReasons
+                            .map(
+                              (reason) =>
+                                  '${reason.label} (${reason.durationMinutes} min)',
+                            )
+                            .join(', '),
+                      ),
+                      _PreviewLine(
                         label: 'Vérification',
                         value: _isVerified ? 'Profil vérifié' : 'Non vérifié',
                       ),
@@ -488,6 +629,238 @@ class _ProfessionalProfileEditPageState
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ReasonsEditorCard extends StatelessWidget {
+  const _ReasonsEditorCard({
+    required this.reasons,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onRemove,
+    required this.onReset,
+  });
+
+  final List<AppointmentReasonOption> reasons;
+  final VoidCallback onAdd;
+  final void Function(int index, AppointmentReasonOption reason) onEdit;
+  final void Function(int index) onRemove;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Motifs de rendez-vous',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ces motifs et durées seront affichés au patient pendant la prise de rendez-vous.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 12),
+          for (final entry in reasons.asMap().entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ReasonTile(
+                reason: entry.value,
+                onEdit: () => onEdit(entry.key, entry.value),
+                onRemove: () => onRemove(entry.key),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add),
+                label: const Text('Ajouter un motif'),
+              ),
+              TextButton.icon(
+                onPressed: onReset,
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Réinitialiser'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReasonTile extends StatelessWidget {
+  const _ReasonTile({
+    required this.reason,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  final AppointmentReasonOption reason;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Material(
+      color: cs.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.event_note_outlined, color: cs.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${reason.label} • ${reason.durationMinutes} min',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Modifier',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+              IconButton(
+                tooltip: 'Supprimer',
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppointmentReasonDialog extends StatefulWidget {
+  const _AppointmentReasonDialog({
+    this.initialReason,
+  });
+
+  final AppointmentReasonOption? initialReason;
+
+  @override
+  State<_AppointmentReasonDialog> createState() =>
+      _AppointmentReasonDialogState();
+}
+
+class _AppointmentReasonDialogState extends State<_AppointmentReasonDialog> {
+  late final TextEditingController _labelCtrl;
+  late int _durationMinutes;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _labelCtrl = TextEditingController(
+      text: widget.initialReason?.label ?? '',
+    );
+    _durationMinutes = widget.initialReason?.durationMinutes ??
+        ProfessionalProfile.defaultAppointmentDurationMinutes;
+  }
+
+  @override
+  void dispose() {
+    _labelCtrl.dispose();
+    super.dispose();
+  }
+
+  String _cleanText(String value) {
+    return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  void _submit() {
+    final label = _cleanText(_labelCtrl.text);
+
+    if (label.isEmpty) {
+      return;
+    }
+
+    Navigator.of(context).pop(
+      AppointmentReasonOption(
+        label: label,
+        durationMinutes: _durationMinutes,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.initialReason == null ? 'Ajouter un motif' : 'Modifier le motif',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _labelCtrl,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'Motif',
+              hintText: 'Ex : Consultation',
+              prefixIcon: Icon(Icons.event_note_outlined),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _durationMinutes,
+            decoration: const InputDecoration(
+              labelText: 'Durée',
+              prefixIcon: Icon(Icons.timer_outlined),
+            ),
+            items: ProfessionalProfile.allowedAppointmentDurations
+                .map(
+                  (duration) => DropdownMenuItem<int>(
+                    value: duration,
+                    child: Text('$duration min'),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _durationMinutes = value);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Enregistrer'),
+        ),
+      ],
     );
   }
 }

@@ -43,13 +43,16 @@ final professionalProfileRepositoryProvider =
 class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
   ProfessionalProfileController(
     this._repository, {
+    required Ref ref,
     required AppUser? authUser,
-  })  : _authUser = authUser,
+  })  : _ref = ref,
+        _authUser = authUser,
         super(_initialState(authUser)) {
     _bootstrap();
   }
 
   final ProfessionalProfileRepository _repository;
+  final Ref _ref;
   final AppUser? _authUser;
 
   static ProfessionalProfile _initialState(AppUser? authUser) {
@@ -69,6 +72,7 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
     );
 
     state = profile;
+    _ref.invalidate(allProfessionalProfilesProvider);
   }
 
   Future<void> updateProfile({
@@ -83,6 +87,8 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
     required List<String> languages,
     required String consultationFeeLabel,
     required bool isVerified,
+    required int appointmentDurationMinutes,
+    required List<AppointmentReasonOption> appointmentReasons,
   }) async {
     final nextState = state.copyWith(
       displayName: displayName,
@@ -96,11 +102,14 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       languages: languages,
       consultationFeeLabel: consultationFeeLabel,
       isVerified: isVerified,
+      appointmentDurationMinutes: appointmentDurationMinutes,
+      appointmentReasons: appointmentReasons,
     );
 
     if (nextState == state) return;
 
     state = nextState;
+
     await _repository.saveCurrent(
       nextState,
       currentUserId: _authUser?.id,
@@ -108,6 +117,8 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       currentUserPhone: _authUser?.phone,
       isProfessional: _authUser?.isProfessional ?? false,
     );
+
+    _ref.invalidate(allProfessionalProfilesProvider);
   }
 
   Future<void> resetProfile() async {
@@ -124,12 +135,15 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       currentUserPhone: _authUser?.phone,
       isProfessional: _authUser?.isProfessional ?? false,
     );
+
+    _ref.invalidate(allProfessionalProfilesProvider);
   }
 
   Future<void> replaceProfile(ProfessionalProfile profile) async {
     if (profile == state) return;
 
     state = profile;
+
     await _repository.saveCurrent(
       profile,
       currentUserId: _authUser?.id,
@@ -137,6 +151,8 @@ class ProfessionalProfileController extends StateNotifier<ProfessionalProfile> {
       currentUserPhone: _authUser?.phone,
       isProfessional: _authUser?.isProfessional ?? false,
     );
+
+    _ref.invalidate(allProfessionalProfilesProvider);
   }
 }
 
@@ -164,6 +180,9 @@ ProfessionalProfile _buildDefaultProfileForAuthUser(AppUser user) {
     languages: const ['Français'],
     consultationFeeLabel: '',
     isVerified: false,
+    appointmentDurationMinutes:
+        ProfessionalProfile.defaultAppointmentDurationMinutes,
+    appointmentReasons: ProfessionalProfile.defaultAppointmentReasons,
   );
 }
 
@@ -175,13 +194,15 @@ final professionalProfileProvider =
 
     return ProfessionalProfileController(
       repository,
+      ref: ref,
       authUser: authUser,
     );
   },
   name: 'professionalProfileProvider',
 );
 
-final allProfessionalProfilesProvider = FutureProvider<List<ProfessionalProfile>>(
+final allProfessionalProfilesProvider =
+    FutureProvider<List<ProfessionalProfile>>(
   (ref) async {
     final repository = ref.watch(professionalProfileRepositoryProvider);
     return repository.getAll();

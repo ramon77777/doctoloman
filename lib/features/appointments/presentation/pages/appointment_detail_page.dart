@@ -7,6 +7,8 @@ import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../../core/ui/info_widgets.dart';
 import '../../../appointment_reports/domain/appointment_report.dart';
 import '../../../appointment_reports/presentation/providers/appointment_reports_providers.dart';
+import '../../../professional_profile/domain/professional_profile.dart';
+import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../../professional_schedule/domain/professional_schedule.dart';
 import '../../../professional_schedule/domain/slot_generation.dart';
 import '../../../professional_schedule/presentation/providers/professional_schedule_providers.dart';
@@ -17,6 +19,21 @@ import '../../domain/appointments_repository.dart';
 import '../helpers/appointment_ui_helpers.dart';
 import '../providers/appointments_providers.dart';
 import '../widgets/appointment_badges.dart';
+
+int _appointmentDurationForPractitionerId({
+  required String practitionerId,
+  required List<ProfessionalProfile> profiles,
+}) {
+  final normalizedId = practitionerId.trim();
+
+  for (final profile in profiles) {
+    if (profile.id.trim() == normalizedId) {
+      return profile.appointmentDurationMinutes;
+    }
+  }
+
+  return ProfessionalProfile.defaultAppointmentDurationMinutes;
+}
 
 class AppointmentDetailPage extends ConsumerWidget {
   const AppointmentDetailPage({
@@ -1091,6 +1108,15 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
       practitionerScheduleProvider(widget.appointment.practitionerId),
     );
 
+    final allProfessionalProfilesAsync = ref.watch(allProfessionalProfilesProvider);
+    final allProfessionalProfiles =
+        allProfessionalProfilesAsync.valueOrNull ?? const <ProfessionalProfile>[];
+
+    final appointmentDurationMinutes = _appointmentDurationForPractitionerId(
+      practitionerId: widget.appointment.practitionerId,
+      profiles: allProfessionalProfiles,
+    );
+
     final schedule = _scheduleForSelectedDay(schedules);
 
     final rawSlotResult = schedule == null
@@ -1101,6 +1127,7 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
         : buildSlotsForDay(
             schedule: schedule,
             selectedDay: _selectedDay,
+            appointmentDurationMinutes: appointmentDurationMinutes,
             minimumLeadTimeMinutes: 0,
           );
 
@@ -1139,7 +1166,9 @@ class _RescheduleDialogState extends ConsumerState<_RescheduleDialog> {
                     borderRadius: BorderRadius.circular(12),
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
-                  child: Text(schedule.summary),
+                  child: Text(
+                    '${schedule.summary} • Durée RDV : $appointmentDurationMinutes min',
+                  ),
                 ),
               const SizedBox(height: 12),
               takenSlotsAsync.when(

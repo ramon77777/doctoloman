@@ -20,6 +20,9 @@ final defaultProfessionalProfile = ProfessionalProfile(
   languages: const ['Français'],
   consultationFeeLabel: '10 000 - 15 000 FCFA',
   isVerified: true,
+  appointmentDurationMinutes:
+      ProfessionalProfile.defaultAppointmentDurationMinutes,
+  appointmentReasons: ProfessionalProfile.defaultAppointmentReasons,
 );
 
 class ProfessionalProfileRepositoryImpl
@@ -58,6 +61,7 @@ class ProfessionalProfileRepositoryImpl
     );
 
     final storedRaw = profilesMap[storageKey];
+
     if (storedRaw is Map<String, dynamic>) {
       try {
         final storedProfile = _profileFromJson(
@@ -75,6 +79,30 @@ class ProfessionalProfileRepositoryImpl
           profilesMap[storageKey] = _toJson(synced);
           await _local.writeProfilesMap(profilesMap);
         }
+
+        return synced;
+      } catch (_) {
+        profilesMap[storageKey] = _toJson(fallback);
+        await _local.writeProfilesMap(profilesMap);
+        return fallback;
+      }
+    }
+
+    if (storedRaw is Map) {
+      try {
+        final storedProfile = _profileFromJson(
+          Map<String, dynamic>.from(storedRaw),
+          fallback: fallback,
+        );
+        final synced = _syncProfileWithAuth(
+          storedProfile: storedProfile,
+          authUserId: currentUserId,
+          authUserName: currentUserName,
+          authUserPhone: currentUserPhone,
+        );
+
+        profilesMap[storageKey] = _toJson(synced);
+        await _local.writeProfilesMap(profilesMap);
 
         return synced;
       } catch (_) {
@@ -248,6 +276,16 @@ ProfessionalProfile _profileFromJson(
       fallback.consultationFeeLabel,
     ),
     isVerified: _readBool(json, 'isVerified', fallback.isVerified),
+    appointmentDurationMinutes: _readAppointmentDuration(
+      json,
+      'appointmentDurationMinutes',
+      fallback.appointmentDurationMinutes,
+    ),
+    appointmentReasons: _readAppointmentReasons(
+      json,
+      'appointmentReasons',
+      fallback.appointmentReasons,
+    ),
   );
 
   return _sanitizeProfile(profile);
@@ -276,6 +314,9 @@ ProfessionalProfile _buildDefaultProfileForUser({
       languages: const ['Français'],
       consultationFeeLabel: '',
       isVerified: false,
+      appointmentDurationMinutes:
+          ProfessionalProfile.defaultAppointmentDurationMinutes,
+      appointmentReasons: ProfessionalProfile.defaultAppointmentReasons,
     ),
   );
 }
@@ -338,19 +379,24 @@ String _lastPhoneDigits(String phone) {
 }
 
 Map<String, dynamic> _toJson(ProfessionalProfile profile) {
+  final sanitized = _sanitizeProfile(profile);
+
   return <String, dynamic>{
-    'id': profile.id,
-    'displayName': profile.displayName,
-    'specialty': profile.specialty,
-    'structureName': profile.structureName,
-    'phone': profile.phone,
-    'city': profile.city,
-    'area': profile.area,
-    'address': profile.address,
-    'bio': profile.bio,
-    'languages': profile.languages,
-    'consultationFeeLabel': profile.consultationFeeLabel,
-    'isVerified': profile.isVerified,
+    'id': sanitized.id,
+    'displayName': sanitized.displayName,
+    'specialty': sanitized.specialty,
+    'structureName': sanitized.structureName,
+    'phone': sanitized.phone,
+    'city': sanitized.city,
+    'area': sanitized.area,
+    'address': sanitized.address,
+    'bio': sanitized.bio,
+    'languages': sanitized.languages,
+    'consultationFeeLabel': sanitized.consultationFeeLabel,
+    'isVerified': sanitized.isVerified,
+    'appointmentDurationMinutes': sanitized.appointmentDurationMinutes,
+    'appointmentReasons':
+        sanitized.appointmentReasons.map((reason) => reason.toMap()).toList(),
   };
 }
 
@@ -368,6 +414,12 @@ ProfessionalProfile _sanitizeProfile(ProfessionalProfile profile) {
     languages: _normalizeLanguages(profile.languages),
     consultationFeeLabel: _cleanText(profile.consultationFeeLabel),
     isVerified: profile.isVerified,
+    appointmentDurationMinutes: ProfessionalProfile.normalizeAppointmentDuration(
+      profile.appointmentDurationMinutes,
+    ),
+    appointmentReasons: _normalizeAppointmentReasons(
+      profile.appointmentReasons,
+    ),
   );
 }
 
@@ -411,6 +463,71 @@ bool _readBool(
   return fallback;
 }
 
+int _readAppointmentDuration(
+  Map<String, dynamic> map,
+  String key,
+  int fallback,
+) {
+  final value = map[key];
+
+  if (value is int) {
+    return ProfessionalProfile.normalizeAppointmentDuration(value);
+  }
+
+  if (value is num) {
+    return ProfessionalProfile.normalizeAppointmentDuration(value.round());
+  }
+
+  if (value is String) {
+    final parsed = int.tryParse(value.trim());
+    if (parsed != null) {
+      return ProfessionalProfile.normalizeAppointmentDuration(parsed);
+    }
+  }
+
+  return ProfessionalProfile.normalizeAppointmentDuration(fallback);
+}
+
+List<AppointmentReasonOption> _readAppointmentReasons(
+  Map<String, dynamic> map,
+  String key,
+  List<AppointmentReasonOption> fallback,
+) {
+  final value = map[key];
+
+  if (value is! List) {
+    return _normalizeAppointmentReasons(fallback);
+  }
+
+  final result = <AppointmentReasonOption>[];
+
+  for (var i = 0; i < value.length; i++) {
+    final raw = value[i];
+    if (raw is! Map) continue;
+
+    final fallbackReason = i < fallback.length
+        ? fallback[i]
+        : ProfessionalProfile.defaultAppointmentReasons.last;
+
+    try {
+      result.add(
+        AppointmentReasonOption.fromMap(
+          Map<String, dynamic>.from(raw),
+          fallback: fallbackReason,
+        ),
+      );
+    } catch (_) {
+      // ignore invalid reason
+    }
+  }
+
+  if (result.isEmpty) {
+    return _normalizeAppointmentReasons(fallback);
+  }
+
+  return _normalizeAppointmentReasons(result);
+}
+
 String _cleanText(String value) {
   return value.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
@@ -443,6 +560,38 @@ List<String> _normalizeLanguages(List<String> rawLanguages) {
   return List.unmodifiable(result);
 }
 
+List<AppointmentReasonOption> _normalizeAppointmentReasons(
+  List<AppointmentReasonOption> rawReasons,
+) {
+  if (rawReasons.isEmpty) {
+    return ProfessionalProfile.defaultAppointmentReasons;
+  }
+
+  final seen = <String>{};
+  final result = <AppointmentReasonOption>[];
+
+  for (final reason in rawReasons) {
+    final label = _cleanText(reason.label);
+    if (label.isEmpty) continue;
+
+    final key = label.toLowerCase();
+    if (!seen.add(key)) continue;
+
+    result.add(
+      AppointmentReasonOption(
+        label: label,
+        durationMinutes: reason.durationMinutes,
+      ),
+    );
+  }
+
+  if (result.isEmpty) {
+    return ProfessionalProfile.defaultAppointmentReasons;
+  }
+
+  return List.unmodifiable(result);
+}
+
 bool _sameProfessionalProfile(
   ProfessionalProfile a,
   ProfessionalProfile b,
@@ -458,10 +607,25 @@ bool _sameProfessionalProfile(
       a.bio == b.bio &&
       _sameStringList(a.languages, b.languages) &&
       a.consultationFeeLabel == b.consultationFeeLabel &&
-      a.isVerified == b.isVerified;
+      a.isVerified == b.isVerified &&
+      a.appointmentDurationMinutes == b.appointmentDurationMinutes &&
+      _sameAppointmentReasons(a.appointmentReasons, b.appointmentReasons);
 }
 
 bool _sameStringList(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+
+  return true;
+}
+
+bool _sameAppointmentReasons(
+  List<AppointmentReasonOption> a,
+  List<AppointmentReasonOption> b,
+) {
   if (a.length != b.length) return false;
 
   for (var i = 0; i < a.length; i++) {

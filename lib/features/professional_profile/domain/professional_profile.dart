@@ -1,5 +1,102 @@
 import 'package:flutter/foundation.dart';
 
+@immutable
+class AppointmentReasonOption {
+  const AppointmentReasonOption({
+    required this.label,
+    required this.durationMinutes,
+  });
+
+  final String label;
+  final int durationMinutes;
+
+  String get durationLabel => '$durationMinutes min';
+
+  AppointmentReasonOption copyWith({
+    String? label,
+    int? durationMinutes,
+  }) {
+    return AppointmentReasonOption(
+      label: label ?? this.label,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'label': label,
+      'durationMinutes': durationMinutes,
+    };
+  }
+
+  factory AppointmentReasonOption.fromMap(
+    Map<String, dynamic> map, {
+    required AppointmentReasonOption fallback,
+  }) {
+    return AppointmentReasonOption(
+      label: _readString(map, 'label', fallback.label),
+      durationMinutes: _readDuration(
+        map,
+        'durationMinutes',
+        fallback.durationMinutes,
+      ),
+    );
+  }
+
+  static String _readString(
+    Map<String, dynamic> map,
+    String key,
+    String fallback,
+  ) {
+    final value = map[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    }
+    return fallback;
+  }
+
+  static int _readDuration(
+    Map<String, dynamic> map,
+    String key,
+    int fallback,
+  ) {
+    final value = map[key];
+
+    if (value is int) {
+      return ProfessionalProfile.normalizeAppointmentDuration(value);
+    }
+
+    if (value is num) {
+      return ProfessionalProfile.normalizeAppointmentDuration(value.round());
+    }
+
+    if (value is String) {
+      final parsed = int.tryParse(value.trim());
+      if (parsed != null) {
+        return ProfessionalProfile.normalizeAppointmentDuration(parsed);
+      }
+    }
+
+    return ProfessionalProfile.normalizeAppointmentDuration(fallback);
+  }
+
+  @override
+  String toString() {
+    return 'AppointmentReasonOption(label: $label, durationMinutes: $durationMinutes)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is AppointmentReasonOption &&
+        other.label == label &&
+        other.durationMinutes == durationMinutes;
+  }
+
+  @override
+  int get hashCode => Object.hash(label, durationMinutes);
+}
 
 @immutable
 class ProfessionalProfile {
@@ -16,6 +113,9 @@ class ProfessionalProfile {
     required List<String> languages,
     required String consultationFeeLabel,
     required bool isVerified,
+    int appointmentDurationMinutes = defaultAppointmentDurationMinutes,
+    List<AppointmentReasonOption> appointmentReasons =
+        defaultAppointmentReasons,
   })  : id = _normalizeRequired(id),
         displayName = _normalizeRequired(displayName),
         specialty = _normalizeRequired(specialty),
@@ -27,7 +127,45 @@ class ProfessionalProfile {
         bio = _normalizeOptional(bio),
         languages = List.unmodifiable(_normalizeLanguages(languages)),
         consultationFeeLabel = _normalizeOptional(consultationFeeLabel),
-        isVerified = isVerified;
+        isVerified = isVerified,
+        appointmentDurationMinutes =
+            normalizeAppointmentDuration(appointmentDurationMinutes),
+        appointmentReasons = List.unmodifiable(
+          _normalizeAppointmentReasons(appointmentReasons),
+        );
+
+  static const int defaultAppointmentDurationMinutes = 30;
+
+  static const List<int> allowedAppointmentDurations = [
+    15,
+    20,
+    30,
+    45,
+    60,
+  ];
+
+  static const List<AppointmentReasonOption> defaultAppointmentReasons = [
+    AppointmentReasonOption(
+      label: 'Consultation',
+      durationMinutes: 30,
+    ),
+    AppointmentReasonOption(
+      label: 'Suivi',
+      durationMinutes: 20,
+    ),
+    AppointmentReasonOption(
+      label: 'Renouvellement ordonnance',
+      durationMinutes: 15,
+    ),
+    AppointmentReasonOption(
+      label: 'Urgence légère',
+      durationMinutes: 15,
+    ),
+    AppointmentReasonOption(
+      label: 'Autre',
+      durationMinutes: 30,
+    ),
+  ];
 
   final String id;
   final String displayName;
@@ -42,6 +180,15 @@ class ProfessionalProfile {
   final String consultationFeeLabel;
   final bool isVerified;
 
+  /// Durée par défaut d’un rendez-vous pour ce professionnel.
+  ///
+  /// Conservée comme valeur de secours.
+  /// Les motifs configurables utilisent [appointmentReasons].
+  final int appointmentDurationMinutes;
+
+  /// Motifs de rendez-vous visibles côté patient, avec durée associée.
+  final List<AppointmentReasonOption> appointmentReasons;
+
   bool get hasStructureName => structureName.isNotEmpty;
   bool get hasPhone => phone.isNotEmpty;
   bool get hasCity => city.isNotEmpty;
@@ -50,6 +197,8 @@ class ProfessionalProfile {
   bool get hasBio => bio.isNotEmpty;
   bool get hasLanguages => languages.isNotEmpty;
   bool get hasConsultationFee => consultationFeeLabel.isNotEmpty;
+
+  String get appointmentDurationLabel => '$appointmentDurationMinutes min';
 
   String get fullLocation {
     final parts = <String>[
@@ -81,6 +230,8 @@ class ProfessionalProfile {
     List<String>? languages,
     String? consultationFeeLabel,
     bool? isVerified,
+    int? appointmentDurationMinutes,
+    List<AppointmentReasonOption>? appointmentReasons,
   }) {
     return ProfessionalProfile(
       id: id ?? this.id,
@@ -95,6 +246,9 @@ class ProfessionalProfile {
       languages: languages ?? this.languages,
       consultationFeeLabel: consultationFeeLabel ?? this.consultationFeeLabel,
       isVerified: isVerified ?? this.isVerified,
+      appointmentDurationMinutes:
+          appointmentDurationMinutes ?? this.appointmentDurationMinutes,
+      appointmentReasons: appointmentReasons ?? this.appointmentReasons,
     );
   }
 
@@ -112,7 +266,9 @@ class ProfessionalProfile {
         'bio: $bio, '
         'languages: $languages, '
         'consultationFeeLabel: $consultationFeeLabel, '
-        'isVerified: $isVerified'
+        'isVerified: $isVerified, '
+        'appointmentDurationMinutes: $appointmentDurationMinutes, '
+        'appointmentReasons: $appointmentReasons'
         ')';
   }
 
@@ -132,7 +288,9 @@ class ProfessionalProfile {
         other.bio == bio &&
         listEquals(other.languages, languages) &&
         other.consultationFeeLabel == consultationFeeLabel &&
-        other.isVerified == isVerified;
+        other.isVerified == isVerified &&
+        other.appointmentDurationMinutes == appointmentDurationMinutes &&
+        listEquals(other.appointmentReasons, appointmentReasons);
   }
 
   @override
@@ -150,12 +308,21 @@ class ProfessionalProfile {
       Object.hashAll(languages),
       consultationFeeLabel,
       isVerified,
+      appointmentDurationMinutes,
+      Object.hashAll(appointmentReasons),
     );
   }
 
+  static int normalizeAppointmentDuration(int value) {
+    if (allowedAppointmentDurations.contains(value)) {
+      return value;
+    }
+
+    return defaultAppointmentDurationMinutes;
+  }
+
   static String _normalizeRequired(String value) {
-    final normalized = _collapseSpaces(value);
-    return normalized;
+    return _collapseSpaces(value);
   }
 
   static String _normalizeOptional(String value) {
@@ -174,6 +341,38 @@ class ProfessionalProfile {
       if (!seen.add(key)) continue;
 
       result.add(normalized);
+    }
+
+    return result;
+  }
+
+  static List<AppointmentReasonOption> _normalizeAppointmentReasons(
+    List<AppointmentReasonOption> values,
+  ) {
+    if (values.isEmpty) {
+      return defaultAppointmentReasons;
+    }
+
+    final seen = <String>{};
+    final result = <AppointmentReasonOption>[];
+
+    for (final raw in values) {
+      final label = _collapseSpaces(raw.label);
+      if (label.isEmpty) continue;
+
+      final key = label.toLowerCase();
+      if (!seen.add(key)) continue;
+
+      result.add(
+        AppointmentReasonOption(
+          label: label,
+          durationMinutes: normalizeAppointmentDuration(raw.durationMinutes),
+        ),
+      );
+    }
+
+    if (result.isEmpty) {
+      return defaultAppointmentReasons;
     }
 
     return result;

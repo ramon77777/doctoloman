@@ -1,5 +1,3 @@
-// lib/features/teleconsultations/presentation/providers/teleconsultation_providers.dart
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/app_user.dart';
@@ -21,8 +19,7 @@ final teleconsultationLocalStorageProvider =
   name: 'teleconsultationLocalStorageProvider',
 );
 
-final teleconsultationRepositoryProvider =
-    Provider<TeleconsultationRepository>(
+final teleconsultationRepositoryProvider = Provider<TeleconsultationRepository>(
   (ref) => InMemoryTeleconsultationRepository(
     ref.watch(teleconsultationLocalStorageProvider),
   ),
@@ -55,17 +52,21 @@ final patientTeleconsultationsProvider =
       return const <TeleconsultationSession>[];
     }
 
-    final patientKey = _normalizePatientKey(user.phone);
-    if (patientKey.isEmpty) {
+    await syncTeleconsultationsFromConfirmedAppointments(ref);
+
+    final items = await ref.watch(teleconsultationsListProvider.future);
+    final patientKeys = _buildPatientKeys(user);
+
+    if (patientKeys.isEmpty) {
       return const <TeleconsultationSession>[];
     }
 
-    await _syncTeleconsultationsFromConfirmedAppointments(ref);
-
-    final items = await ref.watch(teleconsultationsListProvider.future);
-
     final filtered = items.where((item) {
-      return _normalizePatientKey(item.patientId) == patientKey;
+      final sessionPatientId = _normalizePatientKey(item.patientId);
+      final sessionPatientName = _normalizeTextKey(item.patientName);
+
+      return patientKeys.contains(sessionPatientId) ||
+          patientKeys.contains(sessionPatientName);
     }).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
@@ -87,6 +88,10 @@ final professionalTeleconsultationsProvider =
       return const <TeleconsultationSession>[];
     }
 
+    await syncTeleconsultationsFromConfirmedAppointments(ref);
+
+    final items = await ref.watch(teleconsultationsListProvider.future);
+
     final professionalKeys = _buildProfessionalKeys(
       authUser: user,
       profile: profile,
@@ -96,13 +101,12 @@ final professionalTeleconsultationsProvider =
       return const <TeleconsultationSession>[];
     }
 
-    await _syncTeleconsultationsFromConfirmedAppointments(ref);
-
-    final items = await ref.watch(teleconsultationsListProvider.future);
-
     final filtered = items.where((item) {
-      return professionalKeys.contains(_normalizeTextKey(item.professionalId)) ||
-          professionalKeys.contains(_normalizeTextKey(item.professionalName));
+      final sessionProfessionalId = _normalizeTextKey(item.professionalId);
+      final sessionProfessionalName = _normalizeTextKey(item.professionalName);
+
+      return professionalKeys.contains(sessionProfessionalId) ||
+          professionalKeys.contains(sessionProfessionalName);
     }).toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
@@ -129,14 +133,15 @@ final teleconsultationByAppointmentIdProvider =
     final normalizedId = appointmentId.trim();
     if (normalizedId.isEmpty) return null;
 
+    await syncTeleconsultationsFromConfirmedAppointments(ref);
+
     final repo = ref.watch(teleconsultationRepositoryProvider);
     return repo.getByAppointmentId(normalizedId);
   },
   name: 'teleconsultationByAppointmentIdProvider',
 );
 
-final teleconsultationControllerProvider =
-    Provider<TeleconsultationController>(
+final teleconsultationControllerProvider = Provider<TeleconsultationController>(
   (ref) {
     final repo = ref.watch(teleconsultationRepositoryProvider);
 
@@ -176,7 +181,7 @@ class TeleconsultationController {
       throw StateError('Rendez-vous introuvable.');
     }
 
-    if (appointment.status != AppointmentStatus.confirmed) {
+    if (!_isTeleconsultationEligibleAppointment(appointment)) {
       throw StateError(
         'La téléconsultation est réservée aux rendez-vous confirmés.',
       );
@@ -202,13 +207,16 @@ class TeleconsultationController {
 
     final now = DateTime.now();
     final patientId = _normalizePatientKey(appointment.patientPhoneE164);
+    final professionalId = appointment.practitionerId.trim();
 
     final session = TeleconsultationSession(
       id: 'tc_${now.microsecondsSinceEpoch}',
       appointmentId: appointment.id,
       patientId: patientId.isEmpty ? appointment.patientPhoneE164 : patientId,
       patientName: appointment.patientFullName,
-      professionalId: appointment.practitionerId,
+      professionalId: professionalId.isEmpty
+          ? appointment.practitionerName
+          : professionalId,
       professionalName: appointment.practitionerName,
       scheduledAt: appointment.scheduledAt,
       reason: appointment.reason,
@@ -245,6 +253,17 @@ class TeleconsultationController {
     final session = await _requireAuthorizedSession(sessionId);
     if (session == null || session.isClosed) return;
 
+    if (!session.consentAccepted) {
+      throw StateError(
+        'Le consentement est requis avant de rejoindre la salle.',
+      );
+    }
+
+    if (session.status == TeleconsultationStatus.waiting ||
+        session.status == TeleconsultationStatus.inProgress) {
+      return;
+    }
+
     final updated = session.copyWith(
       status: TeleconsultationStatus.waiting,
     );
@@ -256,6 +275,15 @@ class TeleconsultationController {
   Future<void> startSession(String sessionId) async {
     final session = await _requireAuthorizedSession(sessionId);
     if (session == null) return;
+
+    final authState = _ref.read(authControllerProvider);
+    final authUser = authState.user;
+
+    if (authUser?.role != AppUserRole.professional) {
+      throw StateError(
+        'Seul le professionnel peut démarrer la téléconsultation.',
+      );
+    }
 
     if (!session.canStart) {
       throw StateError(
@@ -278,6 +306,15 @@ class TeleconsultationController {
   Future<void> endSession(String sessionId) async {
     final session = await _requireAuthorizedSession(sessionId);
     if (session == null) return;
+
+    final authState = _ref.read(authControllerProvider);
+    final authUser = authState.user;
+
+    if (authUser?.role != AppUserRole.professional) {
+      throw StateError(
+        'Seul le professionnel peut terminer la téléconsultation.',
+      );
+    }
 
     if (!session.canEnd) {
       throw StateError(
@@ -329,14 +366,16 @@ class TeleconsultationController {
     }
 
     if (authUser.role == AppUserRole.patient) {
-      final authPatientKey = _normalizePatientKey(authUser.phone);
-      final sessionPatientKey = _normalizePatientKey(session.patientId);
+      final patientKeys = _buildPatientKeys(authUser);
+      final sessionPatientId = _normalizePatientKey(session.patientId);
+      final sessionPatientName = _normalizeTextKey(session.patientName);
 
-      if (authPatientKey.isEmpty || authPatientKey != sessionPatientKey) {
-        return null;
+      if (patientKeys.contains(sessionPatientId) ||
+          patientKeys.contains(sessionPatientName)) {
+        return session;
       }
 
-      return session;
+      return null;
     }
 
     if (authUser.role == AppUserRole.professional) {
@@ -378,7 +417,7 @@ class TeleconsultationController {
   }
 }
 
-Future<void> _syncTeleconsultationsFromConfirmedAppointments(Ref ref) async {
+Future<void> syncTeleconsultationsFromConfirmedAppointments(Ref ref) async {
   final appointments = await ref.read(appointmentsListProvider.future);
   final controller = ref.read(teleconsultationControllerProvider);
 
@@ -387,9 +426,8 @@ Future<void> _syncTeleconsultationsFromConfirmedAppointments(Ref ref) async {
       continue;
     }
 
-    final existing = await ref.read(
-      teleconsultationByAppointmentIdProvider(appointment.id).future,
-    );
+    final repo = ref.read(teleconsultationRepositoryProvider);
+    final existing = await repo.getByAppointmentId(appointment.id);
 
     if (existing != null) {
       continue;
@@ -408,6 +446,17 @@ Future<void> _syncTeleconsultationsFromConfirmedAppointments(Ref ref) async {
 
 bool _isTeleconsultationEligibleAppointment(Appointment appointment) {
   return appointment.status == AppointmentStatus.confirmed;
+}
+
+Set<String> _buildPatientKeys(AppUser user) {
+  final keys = <String>{
+    _normalizePatientKey(user.phone),
+    _normalizeTextKey(user.name),
+    _normalizeTextKey(user.id),
+  };
+
+  keys.removeWhere((value) => value.isEmpty);
+  return keys;
 }
 
 Set<String> _buildProfessionalKeys({
@@ -430,5 +479,9 @@ String _normalizePatientKey(String value) {
 }
 
 String _normalizeTextKey(String value) {
-  return value.trim();
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+      .replaceAll(RegExp(r'\s+'), ' ');
 }

@@ -145,6 +145,19 @@ class ProfessionalHomePage extends ConsumerWidget {
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.tune_outlined),
+                  title: const Text('Motifs et durées de RDV'),
+                  subtitle: const Text(
+                    'Modifier Consultation, Suivi, Renouvellement, etc.',
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).pushNamed(
+                      AppRoutes.professionalProfileEdit,
+                    );
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.schedule_outlined),
                   title: const Text('Mes disponibilités'),
                   onTap: () {
@@ -234,6 +247,15 @@ class ProfessionalHomePage extends ConsumerWidget {
             children: [
               _WelcomeHeader(profile: profile),
               const SizedBox(height: 16),
+              _ReasonsAndDurationsCard(
+                profile: profile,
+                onOpenEditor: () {
+                  Navigator.of(context).pushNamed(
+                    AppRoutes.professionalProfileEdit,
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -299,6 +321,11 @@ class ProfessionalHomePage extends ConsumerWidget {
                             AppRoutes.professionalProfile,
                           );
                         },
+                        onOpenReasons: () {
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.professionalProfileEdit,
+                          );
+                        },
                         onOpenSchedule: () {
                           Navigator.of(context).pushNamed(
                             AppRoutes.professionalSchedule,
@@ -353,6 +380,7 @@ class ProfessionalHomePage extends ConsumerWidget {
                       const SizedBox(height: 16),
                       _UpcomingAppointmentsCard(
                         items: data.confirmedUpcoming.take(5).toList(),
+                        todayCount: data.todayConfirmed.length,
                         onOpenAll: () {
                           Navigator.of(context).pushNamed(
                             AppRoutes.professionalAppointments,
@@ -476,6 +504,68 @@ class _WelcomeHeader extends StatelessWidget {
   }
 }
 
+class _ReasonsAndDurationsCard extends StatelessWidget {
+  const _ReasonsAndDurationsCard({
+    required this.profile,
+    required this.onOpenEditor,
+  });
+
+  final ProfessionalProfile profile;
+  final VoidCallback onOpenEditor;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final reasons = profile.appointmentReasons.isEmpty
+        ? ProfessionalProfile.defaultAppointmentReasons
+        : profile.appointmentReasons;
+
+    return Card(
+      color: cs.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.tune_outlined, color: cs.onPrimaryContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Motifs et durées de rendez-vous',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: cs.onPrimaryContainer,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    reasons
+                        .map((reason) =>
+                            '${reason.label} • ${reason.durationMinutes} min')
+                        .join('\n'),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onPrimaryContainer,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: onOpenEditor,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Modifier les durées'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StatsGrid extends StatelessWidget {
   const _StatsGrid({
     required this.pendingCount,
@@ -580,12 +670,14 @@ class _QuickActionsCard extends StatelessWidget {
     required this.onOpenAppointments,
     required this.onOpenTeleconsultations,
     required this.onOpenProfile,
+    required this.onOpenReasons,
     required this.onOpenSchedule,
   });
 
   final VoidCallback onOpenAppointments;
   final VoidCallback onOpenTeleconsultations;
   final VoidCallback onOpenProfile;
+  final VoidCallback onOpenReasons;
   final VoidCallback onOpenSchedule;
 
   @override
@@ -599,6 +691,13 @@ class _QuickActionsCard extends StatelessWidget {
           buttonLabel: 'Ouvrir',
           isPrimary: true,
           onPressed: onOpenAppointments,
+        ),
+        const SizedBox(height: 12),
+        _ProfessionalHomeActionCard(
+          icon: Icons.tune_outlined,
+          label: 'Modifier les motifs et durées des rendez-vous',
+          buttonLabel: 'Durées',
+          onPressed: onOpenReasons,
         ),
         const SizedBox(height: 12),
         _ProfessionalHomeActionCard(
@@ -907,10 +1006,12 @@ class _TodayAgendaCard extends StatelessWidget {
 class _UpcomingAppointmentsCard extends StatelessWidget {
   const _UpcomingAppointmentsCard({
     required this.items,
+    required this.todayCount,
     required this.onOpenAll,
   });
 
   final List<Appointment> items;
+  final int todayCount;
   final VoidCallback onOpenAll;
 
   @override
@@ -921,6 +1022,10 @@ class _UpcomingAppointmentsCard extends StatelessWidget {
         .where((item) => !AppDateFormatters.isToday(item.scheduledAt))
         .toList();
 
+    final emptyMessage = todayCount > 0
+        ? 'Les rendez-vous confirmés du jour sont affichés dans l’agenda du jour. Aucun autre rendez-vous confirmé n’est prévu après aujourd’hui.'
+        : 'Aucun rendez-vous confirmé à venir.';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -928,13 +1033,13 @@ class _UpcomingAppointmentsCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'À venir',
+              'Prochains rendez-vous',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 10),
             if (upcomingWithoutToday.isEmpty)
               Text(
-                'Aucun autre rendez-vous confirmé à venir.',
+                emptyMessage,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),

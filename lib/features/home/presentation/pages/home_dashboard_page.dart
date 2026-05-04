@@ -102,24 +102,27 @@ class HomeDashboardPage extends ConsumerWidget {
                       _NextAppointmentsCard(
                         items: upcomingConfirmed.take(3).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.appointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.appointments,
+                          );
                         },
                       ),
                       const SizedBox(height: 12),
                       _PendingAppointmentsCard(
                         items: pending.take(3).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.appointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.appointments,
+                          );
                         },
                       ),
                       const SizedBox(height: 12),
                       _ClosedAppointmentsCard(
                         items: closed.take(2).toList(),
                         onOpenAll: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.appointments);
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.appointments,
+                          );
                         },
                       ),
                     ],
@@ -142,27 +145,59 @@ class HomeDashboardPage extends ConsumerWidget {
                 data: (items) => _DashboardInfoCard(
                   title: 'Mes documents médicaux',
                   icon: Icons.folder_open_outlined,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          items.isEmpty
-                              ? 'Aucun document enregistré pour le moment.'
-                              : '${items.length} document(s) disponible(s).',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurfaceVariant,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 330;
+
+                      final label = items.isEmpty
+                          ? 'Aucun document enregistré pour le moment.'
+                          : '${items.length} document(s) disponible(s).';
+
+                      if (compact) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              label,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              onPressed: () {
+                                Navigator.of(context).pushNamed(
+                                  AppRoutes.medicalRecords,
+                                );
+                              },
+                              child: const Text('Ouvrir'),
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      OutlinedButton(
-                        onPressed: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.medicalRecords);
-                        },
-                        child: const Text('Ouvrir'),
-                      ),
-                    ],
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed: () {
+                              Navigator.of(context).pushNamed(
+                                AppRoutes.medicalRecords,
+                              );
+                            },
+                            child: const Text('Ouvrir'),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 loading: () => const _DashboardInfoCard(
@@ -308,13 +343,19 @@ class _QuickSearchCard extends StatelessWidget {
                   children: [
                     Text(
                       'Rechercher un professionnel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     SizedBox(height: 2),
-                    Text('Médecin, spécialité, établissement…'),
+                    Text(
+                      'Médecin, spécialité, établissement…',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
@@ -344,6 +385,7 @@ class _DashboardInfoCard extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -356,6 +398,8 @@ class _DashboardInfoCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: textTheme.titleMedium,
                   ),
                 ),
@@ -588,25 +632,37 @@ class _AppointmentPreviewTile extends StatelessWidget {
             children: [
               Text(
                 appointment.practitionerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 2),
-              Text(appointment.specialty),
+              Text(
+                appointment.specialty,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(height: 4),
               Text(
                 '${_formatDate(appointment.day)} à ${appointment.slot}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: cs.onSurfaceVariant),
               ),
               const SizedBox(height: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   badge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: cs.onSurface,
                     fontWeight: FontWeight.w600,
@@ -640,6 +696,16 @@ class _QuickActionsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+
+    final crossAxisCount = width < 340 ? 1 : 2;
+
+    final childAspectRatio = width < 340
+        ? 3.2
+        : width < 390
+            ? 0.95
+            : 1.05;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -649,12 +715,12 @@ class _QuickActionsGrid extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         GridView.count(
-          crossAxisCount: 2,
+          crossAxisCount: crossAxisCount,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.25,
+          childAspectRatio: childAspectRatio,
           children: [
             _DashboardActionCard(
               icon: Icons.medical_services_outlined,
@@ -715,47 +781,103 @@ class _DashboardActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Card(
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                height: 42,
-                width: 42,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Expanded(
-                child: Text(
-                  subtitle,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: cs.onSurfaceVariant),
-                ),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxHeight < 130;
+
+              if (compact) {
+                return Row(
+                  children: [
+                    Container(
+                      height: 42,
+                      width: 42,
+                      decoration: BoxDecoration(
+                        color: cs.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        icon,
+                        color: cs.onSecondaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 42,
+                    width: 42,
+                    decoration: BoxDecoration(
+                      color: cs.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: cs.onSecondaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),

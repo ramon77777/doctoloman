@@ -187,7 +187,8 @@ bool _matchesWhat(SearchItem item, String normalizedWhat) {
   if (normalizedWhat.isEmpty) return true;
 
   return _containsNormalized(item.displayName, normalizedWhat) ||
-      _containsNormalized(item.specialty, normalizedWhat);
+      _containsNormalized(item.specialty, normalizedWhat) ||
+      _containsNormalized(item.structureName, normalizedWhat);
 }
 
 bool _matchesWhere(SearchItem item, String normalizedWhere) {
@@ -196,7 +197,8 @@ bool _matchesWhere(SearchItem item, String normalizedWhere) {
   return _containsNormalized(item.city, normalizedWhere) ||
       _containsNormalized(item.area, normalizedWhere) ||
       _containsNormalized(item.address, normalizedWhere) ||
-      _containsNormalized(item.locationLabel, normalizedWhere);
+      _containsNormalized(item.locationLabel, normalizedWhere) ||
+      _containsNormalized(item.structureName, normalizedWhere);
 }
 
 int _effectivePrice(SearchItem item) {

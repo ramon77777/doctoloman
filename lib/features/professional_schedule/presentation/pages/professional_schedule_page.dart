@@ -98,7 +98,6 @@ class _ProfessionalSchedulePageState
       floatingActionButton: selectedDay.isOpen
           ? FloatingActionButton.extended(
               onPressed: () => _showSlotEditor(
-                context,
                 practitionerId: practitionerId,
                 weekday: selectedDay.weekday,
               ),
@@ -115,7 +114,7 @@ class _ProfessionalSchedulePageState
                 padding: const EdgeInsets.all(14),
                 child: Text(
                   'Sélectionnez un jour puis définissez librement les créneaux de consultation. '
-                  'Vous pouvez saisir des créneaux personnalisés comme 08:10 - 08:18 ou 08:20 - 08:35.',
+                  'Les créneaux configurés ici seront affichés tels quels côté patient.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
@@ -133,12 +132,10 @@ class _ProfessionalSchedulePageState
               practitionerId: practitionerId,
               day: selectedDay,
               onAddSlot: () => _showSlotEditor(
-                context,
                 practitionerId: practitionerId,
                 weekday: selectedDay.weekday,
               ),
               onEditSlot: (index, slot) => _showSlotEditor(
-                context,
                 practitionerId: practitionerId,
                 weekday: selectedDay.weekday,
                 slotIndex: index,
@@ -151,8 +148,7 @@ class _ProfessionalSchedulePageState
     );
   }
 
-  Future<void> _showSlotEditor(
-    BuildContext context, {
+  Future<void> _showSlotEditor({
     required String practitionerId,
     required int weekday,
     int? slotIndex,
@@ -160,80 +156,41 @@ class _ProfessionalSchedulePageState
   }) async {
     final isEditing = slotIndex != null && initialSlot != null;
 
-    final startCtrl = TextEditingController(text: initialSlot?.start ?? '');
-    final endCtrl = TextEditingController(text: initialSlot?.end ?? '');
-    final formKey = GlobalKey<FormState>();
+    final currentDay =
+        ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
+              (day) => day.weekday == weekday,
+              orElse: () => DaySchedule(
+                weekday: weekday,
+                label: 'Jour',
+                isOpen: true,
+                slots: const [],
+              ),
+            );
+
+    final result = await showDialog<_SlotEditorResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return _SlotEditorDialog(
+          isEditing: isEditing,
+          initialSlot: initialSlot,
+          existingSlots: currentDay.slots,
+          editingIndex: slotIndex,
+        );
+      },
+    );
+
+    if (!mounted || result == null) return;
+
     final controller = ref.read(professionalSchedulesMapProvider.notifier);
 
-    try {
-      final result = await showDialog<_SlotEditorAction>(
-        context: context,
-        builder: (ctx) {
-          return AlertDialog(
-            title: Text(
-              isEditing ? 'Modifier le créneau' : 'Ajouter un créneau',
-            ),
-            content: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: startCtrl,
-                    keyboardType: TextInputType.datetime,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Début',
-                      hintText: '08:10',
-                    ),
-                    validator: _validateHour,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: endCtrl,
-                    keyboardType: TextInputType.datetime,
-                    textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      labelText: 'Fin',
-                      hintText: '08:18',
-                    ),
-                    validator: _validateHour,
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(ctx).pop(_SlotEditorAction.cancel),
-                child: const Text('Fermer'),
-              ),
-              if (isEditing)
-                TextButton(
-                  onPressed: () =>
-                      Navigator.of(ctx).pop(_SlotEditorAction.delete),
-                  child: const Text('Supprimer'),
-                ),
-              FilledButton(
-                onPressed: () {
-                  final ok = formKey.currentState?.validate() ?? false;
-                  if (!ok) return;
-                  Navigator.of(ctx).pop(_SlotEditorAction.save);
-                },
-                child: const Text('Enregistrer'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (!mounted) return;
-
-      if (result == _SlotEditorAction.cancel || result == null) {
+    switch (result.action) {
+      case _SlotEditorAction.cancel:
         return;
-      }
 
-      if (result == _SlotEditorAction.delete && isEditing) {
+      case _SlotEditorAction.delete:
+        if (!isEditing) return;
+
         await controller.removeSlot(
           practitionerId: practitionerId,
           weekday: weekday,
@@ -241,62 +198,44 @@ class _ProfessionalSchedulePageState
         );
 
         if (!mounted) return;
+
+        setState(() {
+          _selectedWeekday = weekday;
+        });
+
         _showMessage('Créneau supprimé.');
         return;
-      }
 
-      final normalizedSlot = TimeSlot(
-        start: _normalizeHour(startCtrl.text),
-        end: _normalizeHour(endCtrl.text),
-      );
+      case _SlotEditorAction.save:
+        final slot = result.slot;
+        if (slot == null) {
+          _showMessage('Créneau invalide.');
+          return;
+        }
 
-      final refreshedDay =
-          ref.read(practitionerScheduleProvider(practitionerId)).firstWhere(
-                (day) => day.weekday == weekday,
-                orElse: () => DaySchedule(
-                  weekday: weekday,
-                  label: 'Jour',
-                  isOpen: true,
-                  slots: const [],
-                ),
-              );
+        if (isEditing) {
+          await controller.updateSlot(
+            practitionerId: practitionerId,
+            weekday: weekday,
+            slotIndex: slotIndex,
+            slot: slot,
+          );
+        } else {
+          await controller.addSlot(
+            practitionerId: practitionerId,
+            weekday: weekday,
+            slot: slot,
+          );
+        }
 
-      final validationError = _validateSlotAgainstDay(
-        slot: normalizedSlot,
-        existingSlots: refreshedDay.slots,
-        editingIndex: slotIndex,
-      );
+        if (!mounted) return;
 
-      if (validationError != null) {
-        _showMessage(validationError);
+        setState(() {
+          _selectedWeekday = weekday;
+        });
+
+        _showMessage(isEditing ? 'Créneau mis à jour.' : 'Créneau ajouté.');
         return;
-      }
-
-      if (isEditing) {
-        await controller.updateSlot(
-          practitionerId: practitionerId,
-          weekday: weekday,
-          slotIndex: slotIndex,
-          slot: normalizedSlot,
-        );
-      } else {
-        await controller.addSlot(
-          practitionerId: practitionerId,
-          weekday: weekday,
-          slot: normalizedSlot,
-        );
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _selectedWeekday = weekday;
-      });
-
-      _showMessage(isEditing ? 'Créneau mis à jour.' : 'Créneau ajouté.');
-    } finally {
-      startCtrl.dispose();
-      endCtrl.dispose();
     }
   }
 
@@ -323,6 +262,143 @@ class _ProfessionalSchedulePageState
     }
 
     return 'pro-local';
+  }
+}
+
+class _SlotEditorDialog extends StatefulWidget {
+  const _SlotEditorDialog({
+    required this.isEditing,
+    required this.initialSlot,
+    required this.existingSlots,
+    required this.editingIndex,
+  });
+
+  final bool isEditing;
+  final TimeSlot? initialSlot;
+  final List<TimeSlot> existingSlots;
+  final int? editingIndex;
+
+  @override
+  State<_SlotEditorDialog> createState() => _SlotEditorDialogState();
+}
+
+class _SlotEditorDialogState extends State<_SlotEditorDialog> {
+  final _formKey = GlobalKey<FormState>();
+
+  late final TextEditingController _startCtrl;
+  late final TextEditingController _endCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _startCtrl = TextEditingController(
+      text: widget.initialSlot?.start ?? '',
+    );
+    _endCtrl = TextEditingController(
+      text: widget.initialSlot?.end ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _startCtrl.dispose();
+    _endCtrl.dispose();
+    super.dispose();
+  }
+
+  void _close(_SlotEditorResult result) {
+    Navigator.of(context).pop(result);
+  }
+
+  void _save() {
+    final formValid = _formKey.currentState?.validate() ?? false;
+    if (!formValid) return;
+
+    final slot = TimeSlot(
+      start: _normalizeHour(_startCtrl.text),
+      end: _normalizeHour(_endCtrl.text),
+    );
+
+    final validationError = _validateSlotAgainstDay(
+      slot: slot,
+      existingSlots: widget.existingSlots,
+      editingIndex: widget.editingIndex,
+    );
+
+    if (validationError != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(validationError)),
+        );
+      return;
+    }
+
+    _close(
+      _SlotEditorResult(
+        action: _SlotEditorAction.save,
+        slot: slot,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.isEditing ? 'Modifier le créneau' : 'Ajouter un créneau',
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _startCtrl,
+              keyboardType: TextInputType.datetime,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Début',
+                hintText: '08:10',
+              ),
+              validator: _validateHour,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _endCtrl,
+              keyboardType: TextInputType.datetime,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'Fin',
+                hintText: '08:18',
+              ),
+              validator: _validateHour,
+              onFieldSubmitted: (_) => _save(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _close(
+            const _SlotEditorResult(action: _SlotEditorAction.cancel),
+          ),
+          child: const Text('Fermer'),
+        ),
+        if (widget.isEditing)
+          TextButton(
+            onPressed: () => _close(
+              const _SlotEditorResult(action: _SlotEditorAction.delete),
+            ),
+            child: const Text('Supprimer'),
+          ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    );
   }
 }
 
@@ -465,6 +541,7 @@ class _SelectedDayCard extends ConsumerWidget {
                   (entry) {
                     final index = entry.key;
                     final slot = entry.value;
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _SlotTile(
@@ -529,8 +606,19 @@ class _SlotTile extends StatelessWidget {
 
 enum _SlotEditorAction { cancel, delete, save }
 
+class _SlotEditorResult {
+  const _SlotEditorResult({
+    required this.action,
+    this.slot,
+  });
+
+  final _SlotEditorAction action;
+  final TimeSlot? slot;
+}
+
 String? _validateHour(String? value) {
   final v = (value ?? '').trim();
+
   if (!RegExp(r'^\d{2}:\d{2}$').hasMatch(v)) {
     return 'Format attendu : HH:MM';
   }
@@ -542,6 +630,7 @@ String? _validateHour(String? value) {
   if (hh == null || mm == null) {
     return 'Heure invalide';
   }
+
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
     return 'Heure invalide';
   }

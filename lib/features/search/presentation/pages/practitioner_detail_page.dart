@@ -6,6 +6,7 @@ import '../../../appointments/presentation/pages/appointment_flow_page.dart';
 import '../../../appointments/presentation/providers/appointments_providers.dart';
 import '../../../auth/presentation/pages/login_phone_page.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../professional_profile/domain/professional_profile.dart';
 import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../../professional_schedule/domain/professional_schedule.dart';
 import '../../../professional_schedule/domain/slot_generation.dart';
@@ -24,6 +25,43 @@ class PractitionerDetailPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<PractitionerDetailPage> createState() =>
       _PractitionerDetailPageState();
+}
+
+String _structureLabel({
+  required String resolvedStructureName,
+  required String itemStructureName,
+}) {
+  final resolved = resolvedStructureName.trim();
+  if (resolved.isNotEmpty && resolved != 'Structure non renseignée') {
+    return resolved;
+  }
+
+  final fromItem = itemStructureName.trim();
+  if (fromItem.isNotEmpty) {
+    return fromItem;
+  }
+
+  return 'Structure non renseignée';
+}
+
+int _appointmentDurationForPractitioner({
+  required String practitionerId,
+  required ProfessionalProfile activeProfile,
+  required List<ProfessionalProfile> allProfiles,
+}) {
+  final normalizedId = practitionerId.trim();
+
+  for (final profile in allProfiles) {
+    if (profile.id.trim() == normalizedId) {
+      return profile.appointmentDurationMinutes;
+    }
+  }
+
+  if (activeProfile.id.trim() == normalizedId) {
+    return activeProfile.appointmentDurationMinutes;
+  }
+
+  return ProfessionalProfile.defaultAppointmentDurationMinutes;
 }
 
 class _PractitionerDetailPageState
@@ -80,6 +118,7 @@ class _PractitionerDetailPageState
   bool _isSlotStillBookable(DateTime day, String displaySlot) {
     final slotDateTime = _slotToDateTime(day, displaySlot);
     if (slotDateTime == null) return false;
+
     return slotDateTime.isAfter(
       DateTime.now().add(
         const Duration(minutes: _minimumLeadTimeMinutes),
@@ -106,13 +145,16 @@ class _PractitionerDetailPageState
   }
 
   List<String> _buildAvailableSlots({
-    required List<String> rawSlots,
+    required List<String> generatedSlots,
     required Set<String> takenSlots,
     required DateTime selectedDay,
   }) {
-    final normalizedTakenStarts = takenSlots.map((slot) => slot.trim()).toSet();
+    final normalizedTakenStarts = takenSlots
+        .map((slot) => slot.trim())
+        .where((slot) => slot.isNotEmpty)
+        .toSet();
 
-    return rawSlots.where((displaySlot) {
+    return generatedSlots.where((displaySlot) {
       final normalizedDisplaySlot = displaySlot.trim();
       if (normalizedDisplaySlot.isEmpty) {
         return false;
@@ -140,6 +182,7 @@ class _PractitionerDetailPageState
       city: item.city,
       area: item.area,
       address: item.address,
+      structureName: item.structureName,
       isVerified: item.isVerified,
       isAvailableSoon: item.isAvailableSoon,
       rating: item.rating,
@@ -242,6 +285,10 @@ class _PractitionerDetailPageState
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final professionalProfile = ref.watch(professionalProfileProvider);
+    final allProfessionalProfilesAsync =
+        ref.watch(allProfessionalProfilesProvider);
+    final allProfessionalProfiles =
+        allProfessionalProfilesAsync.valueOrNull ?? const <ProfessionalProfile>[];
 
     final resolved = resolvePractitionerData(
       baseItem: widget.item,
@@ -255,6 +302,12 @@ class _PractitionerDetailPageState
     final practitionerId = effectiveItem.id;
     final selectedDay = _normalizeDay(_selectedDay);
 
+    final appointmentDurationMinutes = _appointmentDurationForPractitioner(
+      practitionerId: practitionerId,
+      activeProfile: professionalProfile,
+      allProfiles: allProfessionalProfiles,
+    );
+
     final schedules = ref.watch(practitionerScheduleProvider(practitionerId));
     final schedule = _scheduleForSelectedDay(schedules);
 
@@ -266,6 +319,7 @@ class _PractitionerDetailPageState
         : buildSlotsForDay(
             schedule: schedule,
             selectedDay: selectedDay,
+            appointmentDurationMinutes: appointmentDurationMinutes,
             minimumLeadTimeMinutes: _minimumLeadTimeMinutes,
           );
 
@@ -315,7 +369,10 @@ class _PractitionerDetailPageState
                       _InfoRow(
                         icon: Icons.local_hospital_outlined,
                         title: 'Structure',
-                        value: resolved.structureName,
+                        value: _structureLabel(
+                          resolvedStructureName: resolved.structureName,
+                          itemStructureName: effectiveItem.structureName,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       _InfoRow(
@@ -357,23 +414,38 @@ class _PractitionerDetailPageState
                     onSelect: _pickDay,
                   ),
                   const SizedBox(height: 12),
-                  if (schedule != null) ...[
-                    _ScheduleSummaryCard(
-                      label: schedule.label,
-                      summary: schedule.summary,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
                   takenSlotsAsync.when(
-                    loading: () => const _LoadingAvailabilityCard(),
-                    error: (error, _) => _AvailabilityMessageCard(
-                      icon: Icons.error_outline,
-                      title: 'Impossible de charger les disponibilités',
-                      message: '$error',
+                    loading: () => Column(
+                      children: [
+                        _ScheduleAvailabilitySummaryCard(
+                          label: schedule?.label ?? 'Jour',
+                          availableCount: rawSlotResult.slots.length,
+                          appointmentDurationMinutes:
+                              appointmentDurationMinutes,
+                        ),
+                        const SizedBox(height: 12),
+                        const _LoadingAvailabilityCard(),
+                      ],
+                    ),
+                    error: (error, _) => Column(
+                      children: [
+                        _ScheduleAvailabilitySummaryCard(
+                          label: schedule?.label ?? 'Jour',
+                          availableCount: 0,
+                          appointmentDurationMinutes:
+                              appointmentDurationMinutes,
+                        ),
+                        const SizedBox(height: 12),
+                        _AvailabilityMessageCard(
+                          icon: Icons.error_outline,
+                          title: 'Impossible de charger les disponibilités',
+                          message: '$error',
+                        ),
+                      ],
                     ),
                     data: (takenSlots) {
                       final availableSlots = _buildAvailableSlots(
-                        rawSlots: rawSlotResult.slots,
+                        generatedSlots: rawSlotResult.slots,
                         takenSlots: takenSlots,
                         selectedDay: selectedDay,
                       );
@@ -384,11 +456,22 @@ class _PractitionerDetailPageState
                           availableSlots.contains(_selectedSlot);
 
                       if (!isOpenSelectedDay) {
-                        return const _AvailabilityMessageCard(
-                          icon: Icons.event_busy_outlined,
-                          title: 'Cabinet fermé ce jour',
-                          message:
-                              'Ce professionnel n’ouvre pas ce jour-là. Choisis une autre date.',
+                        return Column(
+                          children: const [
+                            _ScheduleAvailabilitySummaryCard(
+                              label: 'Jour fermé',
+                              availableCount: 0,
+                              appointmentDurationMinutes: 30,
+                              isClosed: true,
+                            ),
+                            SizedBox(height: 12),
+                            _AvailabilityMessageCard(
+                              icon: Icons.event_busy_outlined,
+                              title: 'Cabinet fermé ce jour',
+                              message:
+                                  'Ce professionnel n’ouvre pas ce jour-là. Choisis une autre date.',
+                            ),
+                          ],
                         );
                       }
 
@@ -398,21 +481,45 @@ class _PractitionerDetailPageState
                           _normalizeDay(DateTime.now()),
                         );
 
-                        return _AvailabilityMessageCard(
-                          icon: Icons.schedule_outlined,
-                          title: 'Aucun créneau disponible',
-                          message: isToday
-                              ? 'Les créneaux restants aujourd’hui sont trop proches pour être réservés (minimum 1h à l’avance). Merci de choisir une autre date.'
-                              : 'Tous les créneaux de cette date sont déjà pris ou indisponibles.',
+                        return Column(
+                          children: [
+                            _ScheduleAvailabilitySummaryCard(
+                              label: schedule?.label ?? 'Jour',
+                              availableCount: 0,
+                              appointmentDurationMinutes:
+                                  appointmentDurationMinutes,
+                            ),
+                            const SizedBox(height: 12),
+                            _AvailabilityMessageCard(
+                              icon: Icons.schedule_outlined,
+                              title: 'Aucun créneau disponible',
+                              message: isToday
+                                  ? 'Les créneaux restants aujourd’hui sont trop proches pour être réservés (minimum 1h à l’avance), déjà pris ou indisponibles. Merci de choisir une autre date.'
+                                  : 'Tous les créneaux de cette date sont déjà pris ou indisponibles.',
+                            ),
+                          ],
                         );
                       }
 
-                      return _BookingSection(
-                        availableSlots: availableSlots,
-                        selectedSlot: _selectedSlot,
-                        isLoggedIn: isLoggedIn,
-                        onSelectSlot: _pickSlot,
-                        onBook: canBook ? () => _onBook(effectiveItem) : null,
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ScheduleAvailabilitySummaryCard(
+                            label: schedule?.label ?? 'Jour',
+                            availableCount: availableSlots.length,
+                            appointmentDurationMinutes:
+                                appointmentDurationMinutes,
+                          ),
+                          const SizedBox(height: 12),
+                          _BookingSection(
+                            availableSlots: availableSlots,
+                            selectedSlot: _selectedSlot,
+                            isLoggedIn: isLoggedIn,
+                            onSelectSlot: _pickSlot,
+                            onBook:
+                                canBook ? () => _onBook(effectiveItem) : null,
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -576,19 +683,18 @@ class _AboutCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (hasBio) ...[
+            if (hasBio)
               Text(
                 data.bio,
                 style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else ...[
+              )
+            else
               Text(
                 'Présentation du praticien bientôt disponible.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textMuted,
                     ),
               ),
-            ],
             if (hasLanguages) ...[
               const SizedBox(height: 14),
               Text(
@@ -780,18 +886,26 @@ class _DayPicker extends StatelessWidget {
   }
 }
 
-class _ScheduleSummaryCard extends StatelessWidget {
-  const _ScheduleSummaryCard({
+class _ScheduleAvailabilitySummaryCard extends StatelessWidget {
+  const _ScheduleAvailabilitySummaryCard({
     required this.label,
-    required this.summary,
+    required this.availableCount,
+    required this.appointmentDurationMinutes,
+    this.isClosed = false,
   });
 
   final String label;
-  final String summary;
+  final int availableCount;
+  final int appointmentDurationMinutes;
+  final bool isClosed;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    final summary = isClosed
+        ? 'Fermé'
+        : '$availableCount créneau(x) réservable(s) • Durée RDV : $appointmentDurationMinutes min';
 
     return Card(
       child: Padding(

@@ -175,9 +175,7 @@ class SearchFiltersController extends StateNotifier<SearchFilters> {
 }
 
 final searchFiltersProvider = StateNotifierProvider.family<
-    SearchFiltersController,
-    SearchFilters,
-    SearchSeed>(
+    SearchFiltersController, SearchFilters, SearchSeed>(
   (ref, seed) => SearchFiltersController(
     SearchFilters.initial(
       what: seed.initialWhat,
@@ -283,7 +281,6 @@ List<SearchItem> _mergeDynamicProfessionalItems({
 
   for (final profile in professionalProfiles) {
     final fallbackBaseItem = _buildSearchItemFromProfessionalProfile(profile);
-
     final existingBaseItem = mergedById[profile.id] ?? fallbackBaseItem;
 
     final resolved = resolvePractitionerData(
@@ -291,7 +288,24 @@ List<SearchItem> _mergeDynamicProfessionalItems({
       profile: profile,
     );
 
-    final candidate = resolved.item;
+    final candidate = resolved.item.copyWith(
+      id: profile.id,
+      displayName: profile.displayName.trim().isEmpty
+          ? resolved.item.displayName
+          : profile.displayName,
+      specialty: profile.specialty.trim().isEmpty
+          ? resolved.item.specialty
+          : profile.specialty,
+      structureName: profile.structureName.trim().isEmpty
+          ? resolved.item.structureName
+          : profile.structureName,
+      city: profile.city.trim().isEmpty ? resolved.item.city : profile.city,
+      area: profile.area.trim().isEmpty ? resolved.item.area : profile.area,
+      address: profile.address.trim().isEmpty
+          ? resolved.item.address
+          : profile.address,
+      isVerified: profile.isVerified,
+    );
 
     if (!_matchesSearchFilters(candidate, filters)) {
       if (mergedById.containsKey(profile.id) &&
@@ -320,6 +334,7 @@ SearchItem _buildSearchItemFromProfessionalProfile(ProfessionalProfile profile) 
     specialty: profile.specialty.trim().isEmpty
         ? 'Professionnel de santé'
         : profile.specialty,
+    structureName: profile.structureName,
     city: profile.city,
     area: profile.area,
     address: profile.address,
@@ -333,21 +348,23 @@ SearchItem _buildSearchItemFromProfessionalProfile(ProfessionalProfile profile) 
 }
 
 bool _matchesSearchFilters(SearchItem item, SearchFilters filters) {
-  final normalizedWhat = _normalize(item.displayName);
-  final normalizedSpecialty = _normalize(item.specialty);
+  final normalizedWhat = _normalize(
+    '${item.displayName} ${item.specialty} ${item.structureName}',
+  );
+
   final normalizedWhere = _normalize(
-    '${item.city} ${item.area} ${item.address} ${item.locationLabel}',
+    '${item.city} ${item.area} ${item.address} ${item.locationLabel} ${item.structureName}',
   );
 
   final queryWhat = _normalize(filters.what);
   final queryWhere = _normalize(filters.where);
   final queryCity = _normalize(filters.city ?? '');
 
-  final matchesWhat = queryWhat.isEmpty ||
-      normalizedWhat.contains(queryWhat) ||
-      normalizedSpecialty.contains(queryWhat);
+  final matchesWhat =
+      queryWhat.isEmpty || normalizedWhat.contains(queryWhat);
 
-  final matchesWhere = queryWhere.isEmpty || normalizedWhere.contains(queryWhere);
+  final matchesWhere =
+      queryWhere.isEmpty || normalizedWhere.contains(queryWhere);
 
   final matchesCity =
       queryCity.isEmpty || _normalize(item.city) == queryCity;

@@ -18,11 +18,13 @@ class SearchItem {
     required this.isAvailableSoon,
     required int priceXofMin,
     required int priceXofMax,
+    String structureName = '',
     this.latitude,
     this.longitude,
   })  : id = _cleanText(id),
         displayName = _cleanText(displayName),
         specialty = _cleanText(specialty),
+        structureName = _cleanText(structureName),
         city = _cleanText(city),
         area = _cleanText(area),
         address = _cleanText(address),
@@ -36,6 +38,7 @@ class SearchItem {
 
   final String displayName;
   final String specialty;
+  final String structureName;
 
   final String city;
   final String area;
@@ -53,19 +56,21 @@ class SearchItem {
   final double? latitude;
   final double? longitude;
 
-  // =========================
-  // HELPERS MÉTIER
-  // =========================
-
   bool get hasLocation => city.isNotEmpty || area.isNotEmpty;
   bool get hasAddress => address.isNotEmpty;
   bool get hasGeo => latitude != null && longitude != null;
+  bool get hasStructureName => structureName.isNotEmpty;
 
   String get locationLabel {
     if (area.isEmpty && city.isEmpty) return 'Localisation non renseignée';
     if (area.isEmpty) return city;
     if (city.isEmpty) return area;
     return '$area, $city';
+  }
+
+  String get structureLabel {
+    if (structureName.isEmpty) return 'Structure non renseignée';
+    return structureName;
   }
 
   String get priceLabel {
@@ -85,15 +90,12 @@ class SearchItem {
     return '$v XOF';
   }
 
-  // =========================
-  // COPY / EQUALITY
-  // =========================
-
   SearchItem copyWith({
     String? id,
     SearchItemType? type,
     String? displayName,
     String? specialty,
+    String? structureName,
     String? city,
     String? area,
     String? address,
@@ -111,6 +113,7 @@ class SearchItem {
       type: type ?? this.type,
       displayName: displayName ?? this.displayName,
       specialty: specialty ?? this.specialty,
+      structureName: structureName ?? this.structureName,
       city: city ?? this.city,
       area: area ?? this.area,
       address: address ?? this.address,
@@ -134,6 +137,7 @@ class SearchItem {
         other.type == type &&
         other.displayName == displayName &&
         other.specialty == specialty &&
+        other.structureName == structureName &&
         other.city == city &&
         other.area == area &&
         other.address == address &&
@@ -154,6 +158,7 @@ class SearchItem {
       type,
       displayName,
       specialty,
+      structureName,
       city,
       area,
       address,
@@ -170,12 +175,8 @@ class SearchItem {
 
   @override
   String toString() {
-    return 'SearchItem(id: $id, name: $displayName, specialty: $specialty)';
+    return 'SearchItem(id: $id, name: $displayName, specialty: $specialty, structureName: $structureName)';
   }
-
-  // =========================
-  // NORMALISATION
-  // =========================
 
   static String _cleanText(String value) {
     return value.trim().replaceAll(RegExp(r'\s+'), ' ');

@@ -7,12 +7,19 @@ class SlotGenerationResult {
   });
 
   final bool isOpen;
+
+  /// Créneaux affichés côté patient au format : "08:00 - 08:30".
+  ///
+  /// Important :
+  /// Les créneaux affichés côté patient doivent rester identiques
+  /// aux créneaux définis côté professionnel.
   final List<String> slots;
 }
 
 SlotGenerationResult buildSlotsForDay({
   required DaySchedule schedule,
   required DateTime selectedDay,
+  int appointmentDurationMinutes = 30,
   int minimumLeadTimeMinutes = 60,
   DateTime? now,
 }) {
@@ -23,6 +30,7 @@ SlotGenerationResult buildSlotsForDay({
     );
   }
 
+  final safeLeadTime = minimumLeadTimeMinutes < 0 ? 0 : minimumLeadTimeMinutes;
   final effectiveNow = now ?? DateTime.now();
 
   final normalizedSelectedDay = DateTime(
@@ -45,12 +53,12 @@ SlotGenerationResult buildSlotsForDay({
   }
 
   final earliestAllowed = effectiveNow.add(
-    Duration(minutes: minimumLeadTimeMinutes),
+    Duration(minutes: safeLeadTime),
   );
 
   final availableSlots = <String>[];
 
-  for (final slot in schedule.slots) {
+  for (final slot in sortTimeSlots(schedule.slots)) {
     final startMinutes = toMinutes(slot.start);
     final endMinutes = toMinutes(slot.end);
 
@@ -62,7 +70,7 @@ SlotGenerationResult buildSlotsForDay({
       continue;
     }
 
-    final slotStart = DateTime(
+    final slotStartDateTime = DateTime(
       normalizedSelectedDay.year,
       normalizedSelectedDay.month,
       normalizedSelectedDay.day,
@@ -70,12 +78,12 @@ SlotGenerationResult buildSlotsForDay({
       startMinutes % 60,
     );
 
-    final isTooSoon = slotStart.isBefore(earliestAllowed);
+    final isTooSoon = slotStartDateTime.isBefore(earliestAllowed);
     if (isTooSoon) {
       continue;
     }
 
-    availableSlots.add('${slot.start} - ${slot.end}');
+    availableSlots.add(slot.label);
   }
 
   return SlotGenerationResult(

@@ -5,6 +5,8 @@ import '../../../../app/router/app_routes.dart';
 import '../../../../core/formatters/app_date_formatters.dart';
 import '../../../../core/utils/string_normalizers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../professional_profile/domain/professional_profile.dart';
+import '../../../professional_profile/presentation/providers/professional_profile_providers.dart';
 import '../../../profile/domain/patient_profile.dart';
 import '../../../profile/presentation/providers/patient_profile_providers.dart';
 import '../../../search/domain/search_item.dart';
@@ -42,7 +44,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
   final _phoneCtrl = TextEditingController(text: '+225 ');
 
   int _step = 0;
-  String _reason = 'Consultation';
+  String _reason = '';
   bool _consentAccepted = false;
   bool _confirming = false;
   bool _didInitialPrefill = false;
@@ -50,8 +52,6 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
 
   DateTime get _normalizedDay =>
       DateTime(widget.day.year, widget.day.month, widget.day.day);
-
-  int get _selectedReasonDurationMinutes => _reasonDurationMinutes(_reason);
 
   String get _normalizedStartSlot => _normalizeStartSlot(widget.slot);
 
@@ -194,12 +194,20 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     setState(() => _step -= 1);
   }
 
-  Future<void> _confirm() async {
+  Future<void> _confirm({
+    required int durationMinutes,
+    required String selectedReasonLabel,
+  }) async {
     await _ensureAuth();
     if (!mounted) return;
 
     final authState = ref.read(authControllerProvider);
     if (!authState.isAuthenticated) return;
+
+    if (selectedReasonLabel.trim().isEmpty) {
+      _showMessage('Choisis un motif avant de continuer.');
+      return;
+    }
 
     if (!_consentAccepted) {
       _showMessage('Tu dois accepter le consentement pour continuer.');
@@ -232,7 +240,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         area: widget.item.area,
         day: _normalizedDay,
         slot: _normalizedStartSlot,
-        reason: _reason,
+        reason: selectedReasonLabel,
         patientFirstName: _firstNameCtrl.text.trim(),
         patientLastName: _lastNameCtrl.text.trim(),
         patientPhoneE164: StringNormalizers.normalizePhoneCi(_phoneCtrl.text),
@@ -252,7 +260,7 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         MaterialPageRoute(
           builder: (_) => _AppointmentRequestSentPage(
             appointment: appointment,
-            durationMinutes: _selectedReasonDurationMinutes,
+            durationMinutes: durationMinutes,
           ),
         ),
       );
@@ -279,6 +287,9 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
     if (!authState.isAuthenticated) {
       missing.add('connexion');
     }
+    if (_reason.trim().isEmpty) {
+      missing.add('motif');
+    }
     if (_firstNameCtrl.text.trim().isEmpty) {
       missing.add('prénom');
     }
@@ -300,6 +311,8 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final patientProfileAsync = ref.watch(patientProfileProvider);
+    final activeProfessionalProfile = ref.watch(professionalProfileProvider);
+    final professionalProfilesAsync = ref.watch(allProfessionalProfilesProvider);
 
     patientProfileAsync.whenData((patientProfile) {
       if (!_didInitialPrefill || !mounted) return;
@@ -312,10 +325,42 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
       });
     });
 
+    final reasons = _resolveAppointmentReasons(
+      profilesAsync: professionalProfilesAsync,
+      activeProfile: activeProfessionalProfile,
+      item: widget.item,
+    );
+
+    final selectedReason = _resolveSelectedReason(
+      selectedLabel: _reason,
+      reasons: reasons,
+    );
+
+    if (_reason.trim().isEmpty ||
+        !reasons.any((reason) => reason.label == _reason)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        final nextReason = reasons.isEmpty
+            ? ProfessionalProfile.defaultAppointmentReasons.first.label
+            : reasons.first.label;
+
+        if (_reason == nextReason) return;
+
+        setState(() {
+          _reason = nextReason;
+        });
+      });
+    }
+
+    final selectedDurationMinutes = selectedReason.durationMinutes;
+    final selectedReasonLabel = selectedReason.label;
+
     final pages = <Widget>[
       _ReasonStep(
         item: widget.item,
-        selected: _reason,
+        reasons: reasons,
+        selected: selectedReasonLabel,
         onSelect: (value) => setState(() => _reason = value),
       ),
       _PatientStep(
@@ -329,8 +374,8 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
         item: widget.item,
         day: _normalizedDay,
         slot: _normalizedStartSlot,
-        reason: _reason,
-        durationMinutes: _selectedReasonDurationMinutes,
+        reason: selectedReasonLabel,
+        durationMinutes: selectedDurationMinutes,
         firstName: _firstNameCtrl.text.trim(),
         lastName: _lastNameCtrl.text.trim(),
         phone: StringNormalizers.normalizePhoneCi(_phoneCtrl.text),
@@ -390,7 +435,10 @@ class _AppointmentFlowPageState extends ConsumerState<AppointmentFlowPage> {
                         return;
                       }
 
-                      _confirm();
+                      _confirm(
+                        durationMinutes: selectedDurationMinutes,
+                        selectedReasonLabel: selectedReasonLabel,
+                      );
                     },
               child: _confirming
                   ? const SizedBox(
@@ -450,22 +498,21 @@ class _FlowStepper extends StatelessWidget {
 class _ReasonStep extends StatelessWidget {
   const _ReasonStep({
     required this.item,
+    required this.reasons,
     required this.selected,
     required this.onSelect,
   });
 
   final SearchItem item;
+  final List<AppointmentReasonOption> reasons;
   final String selected;
   final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    const reasons = [
-      'Consultation',
-      'Suivi',
-      'Renouvellement ordonnance',
-      'Urgence légère',
-    ];
+    final safeReasons = reasons.isEmpty
+        ? ProfessionalProfile.defaultAppointmentReasons
+        : reasons;
 
     return ListView(
       children: [
@@ -494,12 +541,12 @@ class _ReasonStep extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),
-                for (final reason in reasons)
+                for (final reason in safeReasons)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      onTap: () => onSelect(reason),
+                      onTap: () => onSelect(reason.label),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -507,12 +554,12 @@ class _ReasonStep extends StatelessWidget {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: selected == reason
+                          color: selected == reason.label
                               ? Theme.of(context).colorScheme.primaryContainer
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: selected == reason
+                            color: selected == reason.label
                                 ? Theme.of(context).colorScheme.primary
                                 : Theme.of(context).colorScheme.outlineVariant,
                           ),
@@ -520,11 +567,11 @@ class _ReasonStep extends StatelessWidget {
                         child: Row(
                           children: [
                             Icon(
-                              selected == reason
+                              selected == reason.label
                                   ? Icons.radio_button_checked
                                   : Icons.radio_button_off,
                               size: 20,
-                              color: selected == reason
+                              color: selected == reason.label
                                   ? Theme.of(context).colorScheme.primary
                                   : Theme.of(context)
                                       .colorScheme
@@ -533,7 +580,7 @@ class _ReasonStep extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                '$reason • ${_formatDurationLabel(_reasonDurationMinutes(reason))}',
+                                '${reason.label} • ${_formatDurationLabel(reason.durationMinutes)}',
                               ),
                             ),
                           ],
@@ -972,18 +1019,75 @@ class _ConfirmLine extends StatelessWidget {
   }
 }
 
-int _reasonDurationMinutes(String reason) {
-  switch (reason) {
-    case 'Suivi':
-      return 20;
-    case 'Renouvellement ordonnance':
-      return 15;
-    case 'Urgence légère':
-      return 15;
-    case 'Consultation':
-    default:
-      return 30;
+List<AppointmentReasonOption> _resolveAppointmentReasons({
+  required AsyncValue<List<ProfessionalProfile>> profilesAsync,
+  required ProfessionalProfile activeProfile,
+  required SearchItem item,
+}) {
+  final itemId = item.id.trim();
+
+  if (activeProfile.id.trim() == itemId) {
+    return _safeReasons(activeProfile.appointmentReasons);
   }
+
+  final itemName = _normalizeLoose(item.displayName);
+
+  if (_normalizeLoose(activeProfile.displayName) == itemName) {
+    return _safeReasons(activeProfile.appointmentReasons);
+  }
+
+  final profiles = profilesAsync.valueOrNull ?? const <ProfessionalProfile>[];
+
+  for (final profile in profiles) {
+    if (profile.id.trim() == itemId) {
+      return _safeReasons(profile.appointmentReasons);
+    }
+  }
+
+  for (final profile in profiles) {
+    if (_normalizeLoose(profile.displayName) == itemName) {
+      return _safeReasons(profile.appointmentReasons);
+    }
+  }
+
+  return ProfessionalProfile.defaultAppointmentReasons;
+}
+
+List<AppointmentReasonOption> _safeReasons(
+  List<AppointmentReasonOption> reasons,
+) {
+  if (reasons.isEmpty) {
+    return ProfessionalProfile.defaultAppointmentReasons;
+  }
+
+  return List<AppointmentReasonOption>.unmodifiable(reasons);
+}
+
+AppointmentReasonOption _resolveSelectedReason({
+  required String selectedLabel,
+  required List<AppointmentReasonOption> reasons,
+}) {
+  final safeReasons = reasons.isEmpty
+      ? ProfessionalProfile.defaultAppointmentReasons
+      : reasons;
+
+  final normalizedSelected = selectedLabel.trim();
+
+  for (final reason in safeReasons) {
+    if (reason.label == normalizedSelected) {
+      return reason;
+    }
+  }
+
+  return safeReasons.first;
+}
+
+String _normalizeLoose(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+      .replaceAll(RegExp(r'\s+'), ' ');
 }
 
 String _formatDurationLabel(int minutes) {
